@@ -1,0 +1,124 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Push events to matching v*, i.e. v1.0, v20.15.10
+    branches:
+      - main  # Run on main branch pushes for testing the build
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest]
+        # Add macOS-latest, ubuntu-latest if you want to build for those platforms as well
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Application
+        run: |
+          npm run build
+          npm run build:win
+        if: matrix.os == 'windows-latest'
+
+      # Add similar conditionals for other platforms if needed
+      # - name: Build for macOS
+      #   run: npm run build:mac
+      #   if: matrix.os == 'macOS-latest'
+
+      # - name: Build for Linux
+      #   run: npm run build:linux
+      #   if: matrix.os == 'ubuntu-latest'
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.os }}-build
+          path: dist/
+          retention-days: 5
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+
+      - name: Display structure of downloaded files
+        run: ls -R artifacts/
+
+      # Create GitHub Release
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            artifacts/**/*.exe
+            artifacts/**/*.dmg
+            artifacts/**/*.AppImage
+            artifacts/**/*.deb
+            artifacts/**/*.snap
+          body: |
+            ## Discord Notification Feed ${{ github.ref_name }}
+
+            ### What's New
+            - See the [commit history](https://github.com/${{ github.repository }}/commits/${{ github.sha }}) for details
+
+            ### Installation
+            - Download the appropriate installer for your operating system
+            - Run the installer and follow the on-screen instructions
+
+            ### Manual Installation
+            - For portable installation, download the ZIP file and extract it to any location
+            - Run the executable file directly
+
+# Add this section if you want to automatically update version in package.json on tag
+#  update-version:
+#    name: Update Version
+#    runs-on: ubuntu-latest
+#    if: startsWith(github.ref, 'refs/tags/v')
+#    steps:
+#      - name: Checkout Repository
+#        uses: actions/checkout@v3
+#        with:
+#          token: ${{ secrets.PAT }} # Personal Access Token with repo scope
+#
+#      - name: Update version in package.json
+#        run: |
+#          VERSION=${GITHUB_REF#refs/tags/v}
+#          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+#
+#      - name: Commit and push changes
+#        run: |
+#          git config --local user.email "action@github.com"
+#          git config --local user.name "GitHub Action"
+#          git add package.json
+#          git commit -m "Update version to $VERSION" || echo "No changes to commit"
+#          git push
