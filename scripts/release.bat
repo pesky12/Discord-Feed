@@ -36,6 +36,6 @@ git push origin main
 git push origin %VERSION%
 
 echo Done! GitHub Actions will now build and release version %VERSION%
-echo Check the progress at: https://github.com/yourusername/discord-notification-feed/actions
+echo Check the progress at: https://github.com/xal3xhx/Discord-Feed/actions
 
 pause

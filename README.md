@@ -17,7 +17,7 @@ A clean, organized feed for your Discord notifications built with Electron.
 
 ### Pre-built Installers
 
-Download the latest release from the [Releases page](https://github.com/yourusername/discord-notification-feed/releases).
+Download the latest release from the [Releases page](https://github.com/xal3xhx/Discord-Feed/releases).
 
 Available installers:
 - Windows: `.exe` installer
@@ -26,7 +26,7 @@ Available installers:
 
 ### Manual Installation (Portable)
 
-1. Download the ZIP file from the [Releases page](https://github.com/yourusername/discord-notification-feed/releases)
+1. Download the ZIP file from the [Releases page](https://github.com/xal3xhx/Discord-Feed/releases)
 2. Extract to any location
 3. Run the executable directly
 
