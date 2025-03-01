@@ -1,175 +1,39 @@
-name: Build and Release
+name: Build Electron App
 
 on:
   push:
-    tags:
-      - 'v*'  # Push events to matching v*, i.e. v1.0, v20.15.10
-    branches:
-      - main  # Run on main branch pushes for testing the build
-  workflow_dispatch:  # Allow manual trigger
-
-# Add permissions at the top level
-permissions:
-  contents: write  # This is required for creating releases and uploading assets
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
 
 jobs:
   build:
-    name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Can also set permissions at the job level if needed
-    permissions:
-      contents: write
+    
     strategy:
       matrix:
-        os: [windows-latest]
-        # Add macOS-latest, ubuntu-latest if you want to build for those platforms as well
-
+        os: [macos-latest, windows-latest, ubuntu-latest]
+        
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-          cache: 'npm'
-
-      - name: Install Dependencies
-        run: npm ci
-
-      - name: Build Application
-        run: |
-          npm run build
-          npm run build:win
-        if: matrix.os == 'windows-latest'
-
-      # Show the build directory structure for debugging
-      - name: Show build directory structure
-        run: |
-          echo "Contents of the dist directory:"
-          dir dist /s
-        if: matrix.os == 'windows-latest'
-
-      - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.os }}-build
-          path: dist/
-          retention-days: 5
-
-  release:
-    name: Create Release
-    needs: build
-    runs-on: ubuntu-latest
-    # Also ensure release job has write permissions
-    permissions:
-      contents: write
-    if: startsWith(github.ref, 'refs/tags/')
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Install zip utility
-        run: sudo apt-get install -y zip
-
-      - name: Download Build Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Display detailed structure of downloaded files
-        run: |
-          echo "Detailed structure of artifacts directory:"
-          find artifacts -type f | sort
-          echo "-------"
-          ls -la artifacts/
-          echo "-------"
-          if [ -d "artifacts/windows-latest-build" ]; then
-            ls -la artifacts/windows-latest-build/
-          fi
-
-      # Create ZIP file for portable version
-      - name: Create ZIP for portable version
-        run: |
-          # Find the win-unpacked directory
-          WIN_UNPACKED=$(find artifacts -name "win-unpacked" -type d | head -1)
-
-          if [ -n "$WIN_UNPACKED" ]; then
-            echo "Found win-unpacked directory at: $WIN_UNPACKED"
-            # Create a zip file of the win-unpacked directory
-            zip -r discord-feed-portable.zip "$WIN_UNPACKED"
-            echo "Created portable ZIP file"
-          else
-            echo "win-unpacked directory not found, trying to find it..."
-            find artifacts -type d | grep -i unpacked
-
-            # Try to find the EXE files to identify where they are
-            echo "Looking for .exe files:"
-            find artifacts -name "*.exe" -type f
-          fi
-
-      # Find the installer EXE to use in the release
-      - name: Locate installer EXE
-        id: find-exe
-        run: |
-          INSTALLER_EXE=$(find artifacts -name "*setup.exe" -type f | head -1)
-          if [ -n "$INSTALLER_EXE" ]; then
-            echo "Found installer at: $INSTALLER_EXE"
-            echo "installer_path=$INSTALLER_EXE" >> $GITHUB_OUTPUT
-          else
-            echo "No setup.exe found, looking for any .exe file"
-            ANY_EXE=$(find artifacts -name "*.exe" -type f | head -1)
-            if [ -n "$ANY_EXE" ]; then
-              echo "Found EXE at: $ANY_EXE"
-              echo "installer_path=$ANY_EXE" >> $GITHUB_OUTPUT
-            else
-              echo "No .exe files found!"
-            fi
-          fi
-
-      # Create GitHub Release with only the files that exist
-      - name: Create Release
-        id: create_release
-        uses: softprops/action-gh-release@v1
-        with:
-          name: Release ${{ github.ref_name }}
-          draft: false
-          prerelease: false
-          token: ${{ secrets.GITHUB_TOKEN }}
-          files: |
-            ${{ steps.find-exe.outputs.installer_path }}
-            discord-feed-portable.zip
-          body: |
-            ## Discord Notification Feed ${{ github.ref_name }}
-
-            ### What's New
-            - See the [commit history](https://github.com/${{ github.repository }}/commits/${{ github.sha }}) for details
-
-            ### Installation
-            - **Windows**: Download the .exe installer and run it
-            - **Portable**: Download the ZIP file, extract it anywhere, and run Discord-Notification-Feed.exe
-
-# Add this section if you want to automatically update version in package.json on tag
-#  update-version:
-#    name: Update Version
-#    runs-on: ubuntu-latest
-#    if: startsWith(github.ref, 'refs/tags/v')
-#    steps:
-#      - name: Checkout Repository
-#        uses: actions/checkout@v4
-#        with:
-#          token: ${{ secrets.PAT }} # Personal Access Token with repo scope
-#
-#      - name: Update version in package.json
-#        run: |
-#          VERSION=${GITHUB_REF#refs/tags/v}
-#          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
-#
-#      - name: Commit and push changes
-#        run: |
-#          git config --local user.email "action@github.com"
-#          git config --local user.name "GitHub Action"
-#          git add package.json
-#          git commit -m "Update version to $VERSION" || echo "No changes to commit"
-#          git push
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Build
+      run: npm run build
+      
+    - name: Package Electron App
+      run: npm run package
+      
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ runner.os }}-build
+        path: dist/**/*

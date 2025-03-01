@@ -10,13 +10,14 @@
     "lint": "eslint --cache .",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "build": "electron-builder build --publish never",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir && echo \"✅ Build created in dist/win-unpacked. To create an installer, use npm run build:win\"",
     "build:win": "npm run build && electron-builder --win && echo \"✅ Windows build completed! Installer is in dist/ directory. For automated releases, push a tag like 'v1.0.0' to GitHub.\"",
     "build:mac": "npm run build && electron-builder --mac && echo \"✅ macOS build completed! Installer is in dist/ directory.\"",
     "build:linux": "npm run build && electron-builder --linux && echo \"✅ Linux build completed! Packages are in dist/ directory.\"",
-    "release": "node -e \"console.log('To create a new release, run: scripts/release.bat <version> (Windows) or scripts/release.sh <version> (Mac/Linux)')\""
+    "release": "node -e \"console.log('To create a new release, run: scripts/release.bat <version> (Windows) or scripts/release.sh <version> (Mac/Linux)')\"",
+    "package": "electron-builder --publish never"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.1",
@@ -28,7 +29,7 @@
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^34.2.0",
-    "electron-builder": "^25.1.8",
+    "electron-builder": "^24.6.3",
     "electron-vite": "^3.0.0",
     "eslint": "^9.20.1",
     "eslint-plugin-react": "^7.37.4",
@@ -38,5 +39,23 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "vite": "^6.1.0"
+  },
+  "build": {
+    "appId": "com.discord-feed",
+    "productName": "Discord Feed",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "build/**/*",
+      "node_modules/**/*",
+      "*.js",
+      "*.html",
+      "*.css",
+      "package.json"
+    ],
+    "win": {
+      "target": ["nsis", "portable"]
+    }
   }
 }
