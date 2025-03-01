@@ -10,14 +10,15 @@
     "lint": "eslint --cache .",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
-    "build": "electron-builder build --publish never",
+    "build": "electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir && echo \"✅ Build created in dist/win-unpacked. To create an installer, use npm run build:win\"",
     "build:win": "npm run build && electron-builder --win && echo \"✅ Windows build completed! Installer is in dist/ directory. For automated releases, push a tag like 'v1.0.0' to GitHub.\"",
     "build:mac": "npm run build && electron-builder --mac && echo \"✅ macOS build completed! Installer is in dist/ directory.\"",
     "build:linux": "npm run build && electron-builder --linux && echo \"✅ Linux build completed! Packages are in dist/ directory.\"",
     "release": "node -e \"console.log('To create a new release, run: scripts/release.bat <version> (Windows) or scripts/release.sh <version> (Mac/Linux)')\"",
-    "package": "electron-builder --publish never"
+    "package": "electron-builder --publish never",
+    "publish": "electron-builder --publish always"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.1",
@@ -52,10 +53,23 @@
       "*.js",
       "*.html",
       "*.css",
-      "package.json"
+      "package.json",
+      "out/**/*",
+      "!**/elevate.exe",
+      "!**/*elevate.exe"
     ],
     "win": {
       "target": ["nsis", "portable"]
+    },
+    "mac": {
+      "target": ["dmg"]
+    },
+    "linux": {
+      "target": ["AppImage", "deb"]
+    },
+    "publish": {
+      "provider": "github",
+      "releaseType": "release"
     }
   }
 }
