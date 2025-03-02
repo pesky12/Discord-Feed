@@ -41,26 +41,107 @@ const formatTimestamp = (timestamp) => {
 const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
   const [clientId, setClientId] = useState(settings.clientId || '')
   const [clientSecret, setClientSecret] = useState(settings.clientSecret || '')
+  const [openaiApiKey, setOpenaiApiKey] = useState(settings.openaiApiKey || '')
+  const [openaiApiEndpoint, setOpenaiApiEndpoint] = useState(settings.openaiApiEndpoint || 'https://api.openai.com/v1')
+  const [enableSummarization, setEnableSummarization] = useState(settings.enableSummarization || false)
+  const [currentTab, setCurrentTab] = useState('discord')
   const [showValidation, setShowValidation] = useState(false)
+  const [testingConnection, setTestingConnection] = useState(false)
+  const [testConnectionResult, setTestConnectionResult] = useState(null)
+  const [summaryDetectionMode, setSummaryDetectionMode] = useState(settings.summaryDetectionMode || 'length')
+  const [minLengthForSummary, setMinLengthForSummary] = useState(settings.minLengthForSummary || 100)
 
   // Update state when settings prop changes
   useEffect(() => {
     if (settings) {
       setClientId(settings.clientId || '')
       setClientSecret(settings.clientSecret || '')
+      setOpenaiApiKey(settings.openaiApiKey || '')
+      setOpenaiApiEndpoint(settings.openaiApiEndpoint || 'https://api.openai.com/v1')
+      setEnableSummarization(settings.enableSummarization || false)
+      setSummaryDetectionMode(settings.summaryDetectionMode || 'length')
+      setMinLengthForSummary(settings.minLengthForSummary || 100)
     }
   }, [settings])
 
+  // Function to check if the endpoint appears to be local/self-hosted
+  const isLocalEndpoint = (endpoint) => {
+    const url = (endpoint || '').toLowerCase()
+    return url.includes('localhost') || 
+           url.includes('127.0.0.1') || 
+           url.includes('::1') ||
+           url.includes('.local')
+  }
+
   const handleSave = () => {
-    // Check if either field is empty
-    if (!clientId.trim() || !clientSecret.trim()) {
+    // Check if Discord fields are empty when on Discord tab
+    if (currentTab === 'discord' && (!clientId.trim() || !clientSecret.trim())) {
       setShowValidation(true)
       return
     }
 
-    onSave({ clientId, clientSecret })
+    // Check if OpenAI settings are valid when summarization is enabled
+    if (currentTab === 'ai' && enableSummarization) {
+      // For all cases, only require an endpoint URL
+      if (!openaiApiEndpoint.trim()) {
+        setShowValidation(true)
+        return
+      }
+      // API key is now optional for all endpoints
+    }
+
+    onSave({
+      clientId,
+      clientSecret,
+      openaiApiKey,
+      openaiApiEndpoint,
+      enableSummarization,
+      summaryDetectionMode,
+      minLengthForSummary
+    })
+    
     setShowValidation(false)
     onClose()
+  }
+
+  // Function to test the LLM connection
+  const testConnection = async () => {
+    if (!openaiApiEndpoint.trim()) {
+      setTestConnectionResult({
+        success: false, 
+        message: 'API endpoint is required'
+      })
+      return
+    }
+
+    try {
+      setTestingConnection(true)
+      setTestConnectionResult(null)
+
+      const result = await window.api.discord.testLlmConnection({
+        apiKey: openaiApiKey.trim(),
+        apiEndpoint: openaiApiEndpoint.trim()
+      })
+
+      if (result.success) {
+        setTestConnectionResult({
+          success: true,
+          message: 'Connection successful! LLM is working properly.'
+        })
+      } else {
+        setTestConnectionResult({
+          success: false,
+          message: `Connection failed: ${result.error || 'Unknown error'}`
+        })
+      }
+    } catch (err) {
+      setTestConnectionResult({
+        success: false,
+        message: `Error: ${err.message || 'Unknown error'}`
+      })
+    } finally {
+      setTestingConnection(false)
+    }
   }
 
   if (!isOpen) return null
@@ -69,58 +150,206 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
     <div className="modal-overlay">
       <div className="modal-content">
         <div className="modal-header">
-          <h2>Discord Settings</h2>
+          <h2>Settings</h2>
           <button onClick={onClose} className="close-button">
             ×
           </button>
         </div>
-        <div className="modal-body">
-          <div className={`form-group ${showValidation && !clientId.trim() ? 'has-error' : ''}`}>
-            <label htmlFor="clientId">Client ID:</label>
-            <input
-              type="text"
-              id="clientId"
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              placeholder="Enter your Discord application client ID"
-            />
-            {showValidation && !clientId.trim() && (
-              <div className="validation-error">Client ID is required</div>
-            )}
-          </div>
-          <div
-            className={`form-group ${showValidation && !clientSecret.trim() ? 'has-error' : ''}`}
+        <div className="modal-tabs">
+          <button
+            className={`modal-tab ${currentTab === 'discord' ? 'active' : ''}`}
+            onClick={() => setCurrentTab('discord')}
           >
-            <label htmlFor="clientSecret">Client Secret:</label>
-            <input
-              type="password"
-              id="clientSecret"
-              value={clientSecret}
-              onChange={(e) => setClientSecret(e.target.value)}
-              placeholder="Enter your Discord application client secret"
-            />
-            {showValidation && !clientSecret.trim() && (
-              <div className="validation-error">Client Secret is required</div>
-            )}
-          </div>
-          <div className="form-help">
-            <p>
-              You can find your Client ID and Secret in the{' '}
-              <a
-                href="#"
-                onClick={(e) => {
-                  e.preventDefault()
-                  window.electron.ipcRenderer.send(
-                    'open-external',
-                    'https://discord.com/developers/applications'
-                  )
-                }}
+            Discord
+          </button>
+          <button
+            className={`modal-tab ${currentTab === 'ai' ? 'active' : ''}`}
+            onClick={() => setCurrentTab('ai')}
+          >
+            AI Summarization
+          </button>
+        </div>
+        <div className="modal-body">
+          {currentTab === 'discord' && (
+            <>
+              <div className={`form-group ${showValidation && !clientId.trim() ? 'has-error' : ''}`}>
+                <label htmlFor="clientId">Client ID:</label>
+                <input
+                  type="text"
+                  id="clientId"
+                  value={clientId}
+                  onChange={(e) => setClientId(e.target.value)}
+                  placeholder="Enter your Discord application client ID"
+                />
+                {showValidation && !clientId.trim() && (
+                  <div className="validation-error">Client ID is required</div>
+                )}
+              </div>
+              <div
+                className={`form-group ${showValidation && !clientSecret.trim() ? 'has-error' : ''}`}
               >
-                Discord Developer Portal
-              </a>
-              .
-            </p>
-          </div>
+                <label htmlFor="clientSecret">Client Secret:</label>
+                <input
+                  type="password"
+                  id="clientSecret"
+                  value={clientSecret}
+                  onChange={(e) => setClientSecret(e.target.value)}
+                  placeholder="Enter your Discord application client secret"
+                />
+                {showValidation && !clientSecret.trim() && (
+                  <div className="validation-error">Client Secret is required</div>
+                )}
+              </div>
+              <div className="form-help">
+                <p>
+                  You can find your Client ID and Secret in the{' '}
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      window.electron.ipcRenderer.send(
+                        'open-external',
+                        'https://discord.com/developers/applications'
+                      )
+                    }}
+                  >
+                    Discord Developer Portal
+                  </a>
+                  .
+                </p>
+                <p className="form-note">
+                  Important: Make sure to add <code>http://localhost:5173</code> as a redirect URI in your Discord
+                  application OAuth2 settings.
+                </p>
+              </div>
+            </>
+          )}
+          
+          {currentTab === 'ai' && (
+            <>
+              <div className="form-group">
+                <label htmlFor="enableSummarization" className="toggle-label">
+                  <input
+                    type="checkbox"
+                    id="enableSummarization"
+                    checked={enableSummarization}
+                    onChange={(e) => setEnableSummarization(e.target.checked)}
+                  />
+                  <span className="toggle-text">Enable AI message summarization</span>
+                </label>
+              </div>
+              
+              {enableSummarization && (
+                <>
+                  <div className="form-group">
+                    <label htmlFor="openaiApiEndpoint">API Endpoint:</label>
+                    <input
+                      type="text"
+                      id="openaiApiEndpoint"
+                      value={openaiApiEndpoint}
+                      onChange={(e) => setOpenaiApiEndpoint(e.target.value)}
+                      placeholder="https://api.openai.com/v1"
+                      className={showValidation && !openaiApiEndpoint.trim() ? 'has-error' : ''}
+                    />
+                    {showValidation && !openaiApiEndpoint.trim() && (
+                      <div className="validation-error">API endpoint is required</div>
+                    )}
+                    <div className="form-help">
+                      <p>Default: <code>https://api.openai.com/v1</code></p>
+                      <p>You can use any OpenAI-compatible endpoint, including local servers like Ollama, or cloud services.</p>
+                    </div>
+                  </div>
+                  
+                  <div className="form-group">
+                    <label htmlFor="openaiApiKey">API Key:</label>
+                    <input
+                      type="password"
+                      id="openaiApiKey"
+                      value={openaiApiKey}
+                      onChange={(e) => setOpenaiApiKey(e.target.value)}
+                      placeholder="Enter your OpenAI or compatible API key (optional for some servers)"
+                    />
+                    <div className="form-help">
+                      <p>API key is optional for servers that don't require authentication</p>
+                      <p>For OpenAI or similar cloud services, an API key is typically required</p>
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="summaryDetectionMode">Summarization Detection Mode:</label>
+                    <div className="radio-group">
+                      <label className="radio-label">
+                        <input
+                          type="radio"
+                          name="summaryDetectionMode"
+                          value="length"
+                          checked={summaryDetectionMode === 'length'}
+                          onChange={() => setSummaryDetectionMode('length')}
+                        />
+                        <span>Simple length-based detection</span>
+                      </label>
+                      <label className="radio-label">
+                        <input
+                          type="radio"
+                          name="summaryDetectionMode"
+                          value="smart"
+                          checked={summaryDetectionMode === 'smart'}
+                          onChange={() => setSummaryDetectionMode('smart')}
+                        />
+                        <span>Smart AI-based detection</span>
+                      </label>
+                    </div>
+                    <div className="form-help">
+                      <p><strong>Simple:</strong> Summarize messages longer than the minimum length</p>
+                      <p><strong>Smart:</strong> Use AI to determine if a message needs summarization (uses additional API calls)</p>
+                    </div>
+                  </div>
+                  
+                  {summaryDetectionMode === 'length' && (
+                    <div className="form-group">
+                      <label htmlFor="minLengthForSummary">Minimum Message Length for Summarization:</label>
+                      <div className="slider-container">
+                        <input
+                          type="range"
+                          id="minLengthForSummary"
+                          min="50"
+                          max="500"
+                          step="10"
+                          value={minLengthForSummary}
+                          onChange={(e) => setMinLengthForSummary(parseInt(e.target.value))}
+                        />
+                        <span className="slider-value">{minLengthForSummary} characters</span>
+                      </div>
+                      <div className="form-help">
+                        <p>Messages shorter than this length will not be summarized</p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="test-connection-container">
+                    <button 
+                      onClick={testConnection} 
+                      className="test-connection-button"
+                      disabled={testingConnection}
+                    >
+                      {testingConnection ? 'Testing...' : 'Test Connection'}
+                    </button>
+                    
+                    {testConnectionResult && (
+                      <div className={`test-connection-result ${testConnectionResult.success ? 'success' : 'error'}`}>
+                        {testConnectionResult.message}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="form-note">
+                    <p>Message summarization uses AI to create short summaries of Discord messages.</p>
+                    <p>You can use OpenAI's API, a local LLM server like Ollama, or network servers with no authentication.</p>
+                  </div>
+                </>
+              )}
+            </>
+          )}
         </div>
         <div className="modal-footer">
           <button onClick={onClose} className="cancel-button">
@@ -140,13 +369,59 @@ SettingsModal.propTypes = {
   onClose: PropTypes.func.isRequired,
   settings: PropTypes.shape({
     clientId: PropTypes.string,
-    clientSecret: PropTypes.string
+    clientSecret: PropTypes.string,
+    openaiApiKey: PropTypes.string,
+    openaiApiEndpoint: PropTypes.string,
+    enableSummarization: PropTypes.bool,
+    summaryDetectionMode: PropTypes.string,
+    minLengthForSummary: PropTypes.number
   }).isRequired,
   onSave: PropTypes.func.isRequired
 }
 
 // A single notification item in the feed
 const NotificationItem = ({ notification }) => {
+  const [avatarSrc, setAvatarSrc] = useState('https://cdn.discordapp.com/embed/avatars/0.png')
+  const [summary, setSummary] = useState(notification.summary)
+  const [summaryLoading, setSummaryLoading] = useState(false)
+
+  useEffect(() => {
+    if (notification?.icon && notification.icon.startsWith('https://cdn.discordapp.com')) {
+      window.api.fetchDiscordImage?.(notification.icon).then((localUrl) => {
+        if (localUrl) setAvatarSrc(localUrl)
+      })
+    }
+    
+    // Check if we should load summary asynchronously
+    if (notification.summaryPending && notification.body) {
+      setSummaryLoading(true)
+      
+      // Listen for summary updates for this specific notification
+      const handleSummaryUpdate = (_, { id, summary, cancelled }) => {
+        if (id === notification.id) {
+          if (summary) {
+            setSummary(summary)
+          }
+          // Always stop the loading indicator, whether we got a summary or it was cancelled
+          setSummaryLoading(false)
+        }
+      }
+      
+      // Register event listener
+      window.electron.ipcRenderer.on('discord:summary-update', handleSummaryUpdate)
+      
+      // Cleanup event listener when component unmounts
+      return () => {
+        window.electron.ipcRenderer.removeListener('discord:summary-update', handleSummaryUpdate)
+      }
+    } else {
+      // Set summary from notification if it's already available
+      setSummary(notification.summary)
+      // Ensure loading indicator is not shown if summaryPending is false
+      setSummaryLoading(false)
+    }
+  }, [notification])
+
   return (
     <div className="notification-item">
       <div className="notification-header">
@@ -164,6 +439,24 @@ const NotificationItem = ({ notification }) => {
       <div className="notification-content">
         <div className="notification-title">{notification.title}</div>
         <p className="notification-body">{notification.body}</p>
+        
+        {summaryLoading ? (
+          <div className="notification-summary loading">
+            <div className="summary-title">Generating summary...</div>
+            <div className="summary-loading-indicator">
+              <div className="dot-pulse">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+            </div>
+          </div>
+        ) : summary ? (
+          <div className="notification-summary">
+            <div className="summary-title">AI Summary</div>
+            <p className="summary-text">{summary}</p>
+          </div>
+        ) : null}
       </div>
 
       <div className="notification-meta">
@@ -194,6 +487,7 @@ NotificationItem.propTypes = {
     icon: PropTypes.string,
     title: PropTypes.string,
     body: PropTypes.string,
+    summary: PropTypes.string,
     timestamp: PropTypes.oneOfType([
       PropTypes.string,
       PropTypes.number,
@@ -220,7 +514,15 @@ function App() {
   const [totalNotifications, setTotalNotifications] = useState(0)
   const notificationsPerPage = 10
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settings, setSettings] = useState({ clientId: '', clientSecret: '' })
+  const [settings, setSettings] = useState({ 
+    clientId: '', 
+    clientSecret: '',
+    openaiApiKey: '',
+    openaiApiEndpoint: 'https://api.openai.com/v1',
+    enableSummarization: false,
+    summaryDetectionMode: 'length',
+    minLengthForSummary: 100
+  })
   const [theme, setTheme] = useState(() => {
     // Get saved theme or default to system preference
     const savedTheme = localStorage.getItem('theme')
@@ -308,7 +610,12 @@ function App() {
       // Trim whitespace from inputs
       const trimmedSettings = {
         clientId: newSettings.clientId.trim(),
-        clientSecret: newSettings.clientSecret.trim()
+        clientSecret: newSettings.clientSecret.trim(),
+        openaiApiKey: newSettings.openaiApiKey.trim(),
+        openaiApiEndpoint: newSettings.openaiApiEndpoint.trim() || 'https://api.openai.com/v1',
+        enableSummarization: newSettings.enableSummarization,
+        summaryDetectionMode: newSettings.summaryDetectionMode,
+        minLengthForSummary: newSettings.minLengthForSummary
       }
 
       await window.api.discord.updateSettings(trimmedSettings)
@@ -406,6 +713,26 @@ function App() {
     }
   }
 
+  // Add keydown event listener for the test notification shortcut for better accessibility
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      // Check if Ctrl+Shift+T was pressed (keyCode 84 is 'T')
+      if (event.ctrlKey && event.shiftKey && event.keyCode === 84) {
+        console.log('Test notification keyboard shortcut detected in renderer')
+        // Generate test notification via the IPC bridge
+        window.api.discord.createTestNotification()
+      }
+    }
+
+    // Add event listener
+    window.addEventListener('keydown', handleKeyDown)
+    
+    // Clean up event listener on unmount
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [])
+
   return (
     <div className="container">
       <div className="header">
@@ -475,6 +802,9 @@ function App() {
         <div className="empty-state">
           <p>Connect to Discord to view your notifications</p>
           <p className="empty-info">Requires Discord desktop app to be running</p>
+          <p className="empty-info" style={{ marginTop: '16px' }}>
+            <kbd>Ctrl+Shift+T</kbd> - Generate a test notification
+          </p>
         </div>
       )}
 

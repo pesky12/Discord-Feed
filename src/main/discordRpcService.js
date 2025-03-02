@@ -3,12 +3,14 @@ import { ipcMain } from 'electron'
 import { app } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
+import { initOpenAIService, getOpenAIService } from './openAiService'
 
 // Will hold our notification data
 let notifications = []
 let isConnected = false
 let client = null
 let guildLookup = []
+let mainWindowRef = null // Store reference to the main window
 
 // Maximum number of notifications to keep in memory
 const MAX_NOTIFICATIONS = 1000
@@ -16,7 +18,12 @@ const MAX_NOTIFICATIONS = 1000
 // Default settings
 let settings = {
   clientId: '',
-  clientSecret: ''
+  clientSecret: '',
+  openaiApiKey: '',
+  openaiApiEndpoint: 'https://api.openai.com/v1',
+  enableSummarization: false,
+  summaryDetectionMode: 'length', // 'length' or 'smart'
+  minLengthForSummary: 100        // Minimum character count for summarization in length mode
 }
 
 // Get settings file path
@@ -68,16 +75,41 @@ const saveSettings = () => {
   }
 }
 
+// Generate summary for a message using OpenAI
+async function generateMessageSummary(message) {
+  if (!settings.enableSummarization) return null;
+  
+  const openAIService = getOpenAIService();
+  if (!openAIService.isEnabled()) return null;
+  
+  try {
+    return await openAIService.summarizeMessage(message);
+  } catch (error) {
+    console.error('Failed to summarize message:', error);
+    return null;
+  }
+}
+
 // Initialize the Discord RPC client
 export function initDiscordRpc(mainWindow) {
+  // Store reference to the main window
+  mainWindowRef = mainWindow
+  
   // Load settings
   loadSettings()
+  
+  // Initialize OpenAI service with settings
+  initOpenAIService(settings)
 
   // Handle settings update
   ipcMain.handle('discord:update-settings', async (_, newSettings) => {
     // Update settings
     settings = { ...settings, ...newSettings }
     saveSettings()
+    
+    // Update OpenAI service settings
+    getOpenAIService().updateSettings(newSettings)
+    
     return { success: true }
   })
 
@@ -107,7 +139,8 @@ export function initDiscordRpc(mainWindow) {
         clientSecret: settings.clientSecret.trim(),
         transport: {
           type: 'ipc'
-        }
+        },
+        redirectUri: 'http://localhost:5173'  // Add proper redirect URI
       })
 
       // Set up event handlers
@@ -140,9 +173,9 @@ export function initDiscordRpc(mainWindow) {
         }
       })
 
-      client.on('NOTIFICATION_CREATE', (data) => {
+      client.on('NOTIFICATION_CREATE', async (data) => {
         console.log('Notification received:', data)
-        const notification = processNotification(data)
+        const notification = await processNotification(data)
         notifications.unshift(notification)
 
         // Limit the total number of stored notifications
@@ -215,14 +248,37 @@ export function initDiscordRpc(mainWindow) {
 }
 
 // Helper function to process a notification
-function processNotification(data) {
+async function processNotification(data) {
   const serverInfo = getServerFromChannel(data.channel_id)
   const isUnknown = typeof serverInfo === 'string'
-
-  return {
+  
+  // Set summaryPending to false by default
+  let summaryPending = false;
+  
+  // Only mark summarization as pending if the feature is enabled and we have message content
+  if (settings.enableSummarization && data.body) {
+    // Check if this message should be summarized (before setting summaryPending to true)
+    // We do a preliminary check here to avoid showing the loading indicator for messages
+    // that don't need summarization
+    const openAIService = getOpenAIService();
+    if (openAIService.isEnabled()) {
+      try {
+        // Only set to pending if the message passes the summarization check
+        const needsSummary = await openAIService.shouldSummarize(data.body);
+        summaryPending = needsSummary;
+      } catch (error) {
+        console.error('Error checking if message needs summarization:', error);
+      }
+    }
+  }
+  
+  // Create the base notification object
+  const notification = {
     id: data.message.id,
     title: data.title,
     body: data.body,
+    summary: null,
+    summaryPending: summaryPending, // Use our determined value
     icon: data.icon_url,
     timestamp: data.message.timestamp,
     serverName: isUnknown ? 'Unknown Server' : serverInfo.server,
@@ -237,6 +293,64 @@ function processNotification(data) {
       avatar: data.icon_url
     }
   }
+  
+  // If summarization is enabled and this message is pending summarization,
+  // start the summary generation process in the background
+  if (summaryPending) {
+    generateMessageSummary(data.body).then(summary => {
+      if (summary) {
+        // Find notification in our array and update it
+        const index = notifications.findIndex(n => n.id === notification.id)
+        if (index !== -1) {
+          notifications[index].summary = summary
+          notifications[index].summaryPending = false
+        }
+        
+        // Notify the renderer process about the updated summary
+        if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+          mainWindowRef.webContents.send('discord:summary-update', { 
+            id: notification.id, 
+            summary 
+          })
+        }
+      } else {
+        // If no summary was generated, update the pending status to false
+        // This handles cases where summarizeMessage returned null
+        const index = notifications.findIndex(n => n.id === notification.id)
+        if (index !== -1) {
+          notifications[index].summaryPending = false
+        }
+        
+        // Notify the renderer to stop showing the loading indicator
+        if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+          mainWindowRef.webContents.send('discord:summary-update', { 
+            id: notification.id, 
+            summary: null,
+            cancelled: true
+          })
+        }
+      }
+    }).catch(error => {
+      console.error('Error generating summary asynchronously:', error)
+      
+      // In case of error, update the notification to not show pending anymore
+      const index = notifications.findIndex(n => n.id === notification.id)
+      if (index !== -1) {
+        notifications[index].summaryPending = false
+      }
+      
+      // Notify the renderer to stop showing the loading indicator
+      if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+        mainWindowRef.webContents.send('discord:summary-update', { 
+          id: notification.id, 
+          summary: null,
+          cancelled: true
+        })
+      }
+    })
+  }
+
+  return notification
 }
 
 function getServerFromChannel(channelID) {
@@ -248,4 +362,52 @@ function getServerFromChannel(channelID) {
     }
   }
   return 'Unknown Server'
+}
+
+// Helper function to generate a test notification for development/testing
+export function createTestNotification(mainWindow) {
+  if (!mainWindow) return;
+
+  const testMessages = [
+    "Hi, how is you!!!",
+    "Do you want to grab some coffee?",
+    "I like birds",
+    "Hey everyone! Just wanted to let you know that we're planning to meet up this Friday at 7PM at the usual place. Please let me know if you can make it so I can get a headcount for the reservation.",
+    "I just pushed a major update to our project repository. The changes include performance optimizations, some UI improvements, and a fix for that annoying bug we've been tracking. Please pull the latest changes and let me know if you encounter any issues!",
+    "Does anyone have experience with the new React hooks API? I'm trying to refactor our component but I'm running into some issues with useEffect dependencies. I've been stuck on this for hours!",
+    "I'm excited to announce that we'll be launching our new product next Tuesday! We've been working hard on this for months and I think you'll all be really impressed with the results. Special thanks to everyone who helped with testing and feedback.",
+    "Just a reminder that we have a team meeting tomorrow at 3PM to discuss the upcoming project deadlines and resource allocation. Please come prepared with status updates on your assigned tasks."
+  ];
+
+  const randomIndex = Math.floor(Math.random() * testMessages.length);
+  const testMessage = testMessages[randomIndex];
+
+  const now = new Date();
+  
+  // Create a mock notification object
+  const mockNotification = {
+    message: {
+      id: `test-${Date.now()}`,
+      nick: "Test User",
+      timestamp: now.toISOString()
+    },
+    title: "Test Notification",
+    body: testMessage,
+    icon_url: "https://cdn.discordapp.com/embed/avatars/0.png",
+    channel_id: "test-channel"
+  };
+
+  // Process it like a regular notification
+  processNotification(mockNotification).then(notification => {
+    // Add to the notifications list
+    notifications.unshift(notification);
+    
+    // Limit the total number of stored notifications
+    if (notifications.length > MAX_NOTIFICATIONS) {
+      notifications = notifications.slice(0, MAX_NOTIFICATIONS);
+    }
+
+    // Send to renderer
+    mainWindow.webContents.send('discord:notification', notification);
+  });
 }

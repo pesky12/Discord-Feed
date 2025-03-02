@@ -1,8 +1,9 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, globalShortcut } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { initDiscordRpc } from './discordRpcService'
+import { initDiscordRpc, createTestNotification } from './discordRpcService'
+import { getOpenAIService } from './openAiService'
 
 let mainWindow = null
 
@@ -57,10 +58,21 @@ app.whenReady().then(() => {
 
   createWindow()
 
+  // Register keyboard shortcut for test notifications (Ctrl+Shift+T)
+  globalShortcut.register('CommandOrControl+Shift+T', () => {
+    console.log('Test notification triggered via keyboard shortcut')
+    createTestNotification(mainWindow)
+  })
+
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
     // dock icon is clicked and there are no other windows open.
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+
+  // Unregister shortcuts when app is about to quit
+  app.on('will-quit', () => {
+    globalShortcut.unregisterAll()
   })
 })
 
@@ -80,5 +92,98 @@ app.on('window-all-closed', () => {
 ipcMain.on('open-external', (_, url) => {
   if (url && typeof url === 'string') {
     shell.openExternal(url)
+  }
+})
+
+// Allow manually triggering a summary for specific content
+ipcMain.handle('summarize-message', async (_, content) => {
+  try {
+    if (!content || typeof content !== 'string') {
+      return { success: false, error: 'Invalid message content' }
+    }
+    
+    const summary = await getOpenAIService().summarizeMessage(content)
+    return { success: true, summary }
+  } catch (error) {
+    console.error('Error generating summary:', error)
+    return { success: false, error: error.message || 'Failed to generate summary' }
+  }
+})
+
+// Add IPC handler for test notification
+ipcMain.handle('discord:create-test-notification', () => {
+  createTestNotification(mainWindow)
+  return { success: true }
+})
+
+// Add IPC handler for testing LLM connection
+ipcMain.handle('discord:test-llm-connection', async (_, settings) => {
+  try {
+    const { apiKey, apiEndpoint } = settings
+
+    if (!apiEndpoint || !apiEndpoint.trim()) {
+      return { 
+        success: false, 
+        error: 'API endpoint is required' 
+      }
+    }
+
+    // Create a test message for a quick connection check
+    const testMessage = "Hello, this is a test message to check the connection."
+    
+    // Use similar code as in OpenAIService but don't reuse the instance
+    // This allows testing different settings before saving them
+    const endpoint = `${apiEndpoint.replace(/\/+$/, '')}/chat/completions`
+    
+    const headers = {
+      'Content-Type': 'application/json'
+    }
+    
+    // Only add Authorization header if API key is provided
+    if (apiKey && apiKey.trim() !== '') {
+      headers['Authorization'] = `Bearer ${apiKey}`
+    }
+    
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: 'gpt-3.5-turbo', // Use a common model name
+        messages: [
+          { role: 'system', content: 'You are a helpful assistant.' },
+          { role: 'user', content: 'Say hello for a connection test!' }
+        ],
+        max_tokens: 10,
+        temperature: 0.3
+      })
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      console.error('LLM test connection error:', errorData)
+      return { 
+        success: false, 
+        error: `API error: ${errorData.error?.message || errorData.error || 'Unknown error'}`
+      }
+    }
+
+    const data = await response.json()
+    if (data.choices && data.choices.length > 0) {
+      return { 
+        success: true,
+        modelName: data.model || 'Unknown model' 
+      }
+    } else {
+      return { 
+        success: false, 
+        error: 'Invalid response from API' 
+      }
+    }
+  } catch (error) {
+    console.error('LLM test connection failed:', error)
+    return { 
+      success: false, 
+      error: error.message || 'Connection failed' 
+    }
   }
 })
