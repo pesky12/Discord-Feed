@@ -228,7 +228,7 @@ h1 {
 
 .timestamp {
   font-size: 0.75rem;
-  color: var(--secondary-text);
+  color: var (--secondary-text);
   margin-top: 2px;
 }
 
@@ -754,4 +754,104 @@ h1 {
   text-align: right;
   font-size: 0.9rem;
   color: var(--secondary-text);
+}
+
+/* Filter controls */
+.filter-controls {
+  display: flex;
+  gap: 8px;
+  margin: 0 16px;
+}
+
+.filter-select {
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  background-color: var(--card-background);
+  color: var(--text-color);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(88, 101, 242, 0.2);
+}
+
+/* Message categories and importance indicators */
+.message-category {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.category-label {
+  font-size: 0.8rem;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background-color: var(--hover-background);
+  color: var(--text-color);
+}
+
+.importance-indicator {
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.importance-indicator.high {
+  background-color: #ed4245;
+  color: white;
+}
+
+.importance-indicator.medium {
+  background-color: #faa61a;
+  color: white;
+}
+
+.importance-indicator.low {
+  background-color: #3ba55c;
+  color: white;
+}
+
+/* Importance-based notification styling */
+.notification-item.importance-high {
+  border-left: 4px solid #ed4245;
+}
+
+.notification-item.importance-medium {
+  border-left: 4px solid #faa61a;
+}
+
+.notification-item.importance-low {
+  border-left: 4px solid #3ba55c;
+}
+
+/* Dark theme adjustments */
+.theme-dark .importance-indicator.high {
+  background-color: rgba(237, 66, 69, 0.2);
+  color: #ed4245;
+}
+
+.theme-dark .importance-indicator.medium {
+  background-color: rgba(250, 166, 26, 0.2);
+  color: #faa61a;
+}
+
+.theme-dark .importance-indicator.low {
+  background-color: rgba(59, 165, 92, 0.2);
+  color: #3ba55c;
+}
+
+/* Remove response suggestions UI styles */
+.response-suggestions,
+.response-suggestion,
+.response-type-badge,
+.response-type-brief,
+.response-type-detailed,
+.response-type-followup {
+  display: none;
 }

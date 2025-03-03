@@ -23,7 +23,7 @@ let settings = {
   openaiApiEndpoint: 'https://api.openai.com/v1',
   enableSummarization: false,
   summaryDetectionMode: 'length', // 'length' or 'smart'
-  minLengthForSummary: 100        // Minimum character count for summarization in length mode
+  minLengthForSummary: 100       // Minimum character count for summarization in length mode
 }
 
 // Get settings file path
@@ -76,14 +76,14 @@ const saveSettings = () => {
 }
 
 // Generate summary for a message using OpenAI
-async function generateMessageSummary(message) {
+async function generateMessageSummary(message, context = {}) {
   if (!settings.enableSummarization) return null;
   
   const openAIService = getOpenAIService();
   if (!openAIService.isEnabled()) return null;
   
   try {
-    return await openAIService.summarizeMessage(message);
+    return await openAIService.summarizeMessage(message, context);
   } catch (error) {
     console.error('Failed to summarize message:', error);
     return null;
@@ -251,43 +251,58 @@ export function initDiscordRpc(mainWindow) {
 async function processNotification(data) {
   const serverInfo = getServerFromChannel(data.channel_id)
   const isUnknown = typeof serverInfo === 'string'
+  const isDM = !serverInfo || serverInfo === 'Unknown Server'
   
-  // Set summaryPending to false by default
   let summaryPending = false;
+  let category = null;
+  let importance = null;
   
-  // Only mark summarization as pending if the feature is enabled and we have message content
-  if (settings.enableSummarization && data.body) {
-    // Check if this message should be summarized (before setting summaryPending to true)
-    // We do a preliminary check here to avoid showing the loading indicator for messages
-    // that don't need summarization
-    const openAIService = getOpenAIService();
-    if (openAIService.isEnabled()) {
-      try {
-        // Only set to pending if the message passes the summarization check
-        const needsSummary = await openAIService.shouldSummarize(data.body);
-        summaryPending = needsSummary;
-      } catch (error) {
-        console.error('Error checking if message needs summarization:', error);
+  const openAIService = getOpenAIService();
+  if (settings.enableSummarization && data.body && openAIService.isEnabled()) {
+    try {
+      // Get categorization only for non-DM messages
+      if (!isDM) {
+        const categorization = await openAIService.categorizeMessage(data.body, isDM);
+        if (categorization) {
+          category = categorization.category;
+          importance = categorization.importance;
+        }
       }
+      
+      // Check if we need a summary
+      const needsSummary = await openAIService.shouldSummarize(data.body);
+      summaryPending = needsSummary;
+
+    } catch (error) {
+      console.error('Error in AI processing:', error);
     }
   }
+
+  // Build context for message processing
+  const context = {
+    isDM,
+    channel: isDM ? 'Direct Message' : serverInfo.channel,
+    author: data.message.nick || 'Unknown User',
+    recentMessages: []
+  };
   
-  // Create the base notification object
+  // Create the notification object
   const notification = {
     id: data.message.id,
     title: data.title,
     body: data.body,
     summary: null,
-    summaryPending: summaryPending, // Use our determined value
+    summaryPending: summaryPending,
+    ...(isDM ? {} : { category, importance }),
     icon: data.icon_url,
     timestamp: data.message.timestamp,
-    serverName: isUnknown ? 'Unknown Server' : serverInfo.server,
-    channelName: isUnknown ? '' : serverInfo.channel,
+    serverName: isDM ? 'Direct Message' : (isUnknown ? 'Unknown Server' : serverInfo.server),
+    channelName: isDM ? data.message.nick || 'DM' : (isUnknown ? '' : serverInfo.channel),
     serverId: isUnknown ? '' : serverInfo.serverid,
     channelId: data.channel_id,
     messageLink: isUnknown
       ? ''
-      : `https://discord.com/channels/${serverInfo.serverid}/${data.channel_id}/${data.message.id}`,
+      : `https://discord.com/channels/${isDM ? '@me' : serverInfo.serverid}/${data.channel_id}/${data.message.id}`,
     author: {
       name: data.message.nick || 'Unknown User',
       avatar: data.icon_url
@@ -297,7 +312,7 @@ async function processNotification(data) {
   // If summarization is enabled and this message is pending summarization,
   // start the summary generation process in the background
   if (summaryPending) {
-    generateMessageSummary(data.body).then(summary => {
+    generateMessageSummary(data.body, context).then(summary => {
       if (summary) {
         // Find notification in our array and update it
         const index = notifications.findIndex(n => n.id === notification.id)
@@ -315,13 +330,11 @@ async function processNotification(data) {
         }
       } else {
         // If no summary was generated, update the pending status to false
-        // This handles cases where summarizeMessage returned null
         const index = notifications.findIndex(n => n.id === notification.id)
         if (index !== -1) {
           notifications[index].summaryPending = false
         }
         
-        // Notify the renderer to stop showing the loading indicator
         if (mainWindowRef && !mainWindowRef.isDestroyed()) {
           mainWindowRef.webContents.send('discord:summary-update', { 
             id: notification.id, 
@@ -333,13 +346,11 @@ async function processNotification(data) {
     }).catch(error => {
       console.error('Error generating summary asynchronously:', error)
       
-      // In case of error, update the notification to not show pending anymore
       const index = notifications.findIndex(n => n.id === notification.id)
       if (index !== -1) {
         notifications[index].summaryPending = false
       }
       
-      // Notify the renderer to stop showing the loading indicator
       if (mainWindowRef && !mainWindowRef.isDestroyed()) {
         mainWindowRef.webContents.send('discord:summary-update', { 
           id: notification.id, 

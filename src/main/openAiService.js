@@ -133,37 +133,44 @@ Respond with ONLY "YES" or "NO" - should this message be summarized?`;
   /**
    * Create a summary of a message using OpenAI API
    * @param {string} messageContent - The Discord message content to summarize
+   * @param {object} context - Additional context about the message
    * @returns {Promise<string|null>} - The summary or null if failed
    */
-  async summarizeMessage(messageContent) {
+  async summarizeMessage(messageContent, context = {}) {
     if (!this.enabled || !messageContent || messageContent.trim() === '') {
-      return null
+      return null;
     }
 
     // First check if the message needs summarization
     const needsSummary = await this.shouldSummarize(messageContent);
     if (!needsSummary) {
-      return null; // Skip summarization for messages that don't need it
+      return null;
     }
 
     try {
-      // Use native fetch instead of node-fetch
-      // In Electron, we can use the native fetch API in the main process
+      const endpoint = `${this.apiEndpoint.replace(/\/+$/, '')}/chat/completions`;
       
-      // Construct API endpoint based on configured base URL
-      const endpoint = `${this.apiEndpoint.replace(/\/+$/, '')}/chat/completions`
-      
-      // Format the message for the API
-      const prompt = `Please provide a brief, concise summary (1-2 sentences) of the following Discord message: "${messageContent}"`
+      // Build system prompt with context
+      let systemPrompt = `You are a helpful assistant that summarizes Discord messages in a brief and concise way.
+You understand conversation context and Discord's communication style.
+Consider the following context when analyzing messages:`;
+
+      // Add context if available
+      if (context.channel) systemPrompt += `\n- Channel: ${context.channel}`;
+      if (context.author) systemPrompt += `\n- Author: ${context.author}`;
+      if (context.recentMessages) {
+        systemPrompt += `\n- Recent conversation context:\n${context.recentMessages.map(m => `  ${m.author}: ${m.content}`).join('\n')}`;
+      }
+      if (context.isDM) systemPrompt += `\n- This is a direct message conversation`;
+
+      const prompt = `Please provide a brief, concise summary (1-2 sentences) of the following Discord message${context.isDM ? ' from this DM conversation' : ''}: "${messageContent}"`;
       
       const headers = {
         'Content-Type': 'application/json'
-      }
+      };
       
-      // Only add Authorization header if API key is provided
-      // This allows usage with any LLM servers that don't require auth
       if (this.apiKey && this.apiKey.trim() !== '') {
-        headers['Authorization'] = `Bearer ${this.apiKey}`
+        headers['Authorization'] = `Bearer ${this.apiKey}`;
       }
       
       const response = await fetch(endpoint, {
@@ -172,13 +179,13 @@ Respond with ONLY "YES" or "NO" - should this message be summarized?`;
         body: JSON.stringify({
           model: DEFAULT_MODEL,
           messages: [
-            { role: 'system', content: 'You are a helpful assistant that summarizes Discord messages in a brief and concise way.' },
+            { role: 'system', content: systemPrompt },
             { role: 'user', content: prompt }
           ],
           max_tokens: 100,
           temperature: 0.3
         })
-      })
+      });
 
       if (!response.ok) {
         const error = await response.json()
@@ -195,6 +202,91 @@ Respond with ONLY "YES" or "NO" - should this message be summarized?`;
     } catch (error) {
       console.error('Failed to generate summary:', error)
       return null
+    }
+  }
+
+  /**
+   * Categorize a message using AI
+   * @param {string} messageContent - The message content to categorize
+   * @param {boolean} isDM - Whether the message is from a DM channel
+   * @returns {Promise<Object>} - The category and importance level
+   */
+  async categorizeMessage(messageContent, isDM = false) {
+    // Skip categorization for DM messages
+    if (isDM) {
+      return null;
+    }
+
+    if (!this.enabled || !messageContent || messageContent.trim() === '') {
+      return null;
+    }
+
+    try {
+      const endpoint = `${this.apiEndpoint.replace(/\/+$/, '')}/chat/completions`;
+      
+      const prompt = `Analyze the following Discord message and categorize it:
+Message: "${messageContent}"
+
+Respond in JSON format with two fields:
+1. "category" - One of: "EVENT" (meetings, planning, scheduling), "QUESTION" (help requests, inquiries), "ANNOUNCEMENT" (important updates), or "CASUAL" (general chat, social)
+2. "importance" - One of: "HIGH", "MEDIUM", "LOW"
+
+Base the importance on:
+- HIGH: Critical announcements, time-sensitive events, urgent questions
+- MEDIUM: Regular updates, general questions, upcoming events
+- LOW: Casual conversation, social chat
+
+Provide ONLY the JSON response, no additional text.`;
+      
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (this.apiKey && this.apiKey.trim() !== '') {
+        headers['Authorization'] = `Bearer ${this.apiKey}`;
+      }
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: DEFAULT_MODEL,
+          messages: [
+            { 
+              role: 'system', 
+              content: `You are a helpful assistant that categorizes Discord messages. You understand the context and flow of Discord conversations. Respond only with the requested JSON format.` 
+            },
+            { role: 'user', content: prompt }
+          ],
+          max_tokens: 100,
+          temperature: 0.1
+        })
+      });
+
+      if (!response.ok) {
+        console.error('LLM API error when categorizing message');
+        return null;
+      }
+
+      const data = await response.json();
+      if (data.choices && data.choices.length > 0 && data.choices[0].message) {
+        try {
+          // Parse the JSON response from the message content
+          const categorization = JSON.parse(data.choices[0].message.content.trim());
+          
+          // Validate the response format
+          if (categorization.category && categorization.importance) {
+            return categorization;
+          }
+        } catch (parseError) {
+          console.error('Error parsing categorization response:', parseError);
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error in categorizeMessage:', error);
+      return null;
     }
   }
 }

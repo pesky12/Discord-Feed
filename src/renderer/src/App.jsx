@@ -422,8 +422,17 @@ const NotificationItem = ({ notification }) => {
     }
   }, [notification])
 
+  const getImportanceClass = () => {
+    switch (notification.importance) {
+      case 'HIGH': return 'importance-high';
+      case 'MEDIUM': return 'importance-medium';
+      case 'LOW': return 'importance-low';
+      default: return '';
+    }
+  };
+
   return (
-    <div className="notification-item">
+    <div className={`notification-item ${getImportanceClass()}`}>
       <div className="notification-header">
         <img
           src={notification.icon || 'https://cdn.discordapp.com/embed/avatars/0.png'}
@@ -434,6 +443,16 @@ const NotificationItem = ({ notification }) => {
           <span className="username">{notification.author?.name || 'Discord User'}</span>
           <span className="timestamp">{formatTimestamp(notification.timestamp)}</span>
         </div>
+        {notification.category && (
+          <div className="message-category">
+            <span className="category-label">{notification.category.replace(/_/g, ' ')}</span>
+            {notification.importance && (
+              <span className={`importance-indicator ${notification.importance.toLowerCase()}`}>
+                {notification.importance}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="notification-content">
@@ -533,6 +552,19 @@ function App() {
     // Check system preference
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   })
+
+  const [categoryFilter, setCategoryFilter] = useState('ALL');
+  const [importanceFilter, setImportanceFilter] = useState('ALL');
+
+  // Add state to track if we're viewing a DM
+  const [isDMView, setIsDMView] = useState(false);
+
+  // Filter notifications based on category and importance
+  const filteredNotifications = displayedNotifications.filter(notification => {
+    const matchesCategory = categoryFilter === 'ALL' || notification.category === categoryFilter;
+    const matchesImportance = importanceFilter === 'ALL' || notification.importance === importanceFilter;
+    return matchesCategory && matchesImportance;
+  });
 
   // Apply theme class to body element
   useEffect(() => {
@@ -733,11 +765,47 @@ function App() {
     }
   }, [])
 
+  // Update the view type when notifications change
+  useEffect(() => {
+    // Check if all current notifications are DMs
+    const allDMs = displayedNotifications.every(n => n.serverName === 'Direct Message');
+    setIsDMView(allDMs);
+  }, [displayedNotifications]);
+
   return (
     <div className="container">
       <div className="header">
         <h1>Discord Notifications</h1>
+        
+        {/* Only show filter controls if not in DM view */}
+        {!isDMView && displayedNotifications.length > 0 && (
+          <div className="filter-controls">
+            <select 
+              value={categoryFilter} 
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="filter-select"
+            >
+              <option value="ALL">All Categories</option>
+              <option value="EVENT">Events & Planning</option>
+              <option value="QUESTION">Questions</option>
+              <option value="ANNOUNCEMENT">Announcements</option>
+              <option value="CASUAL">Casual Chat</option>
+            </select>
 
+            <select 
+              value={importanceFilter} 
+              onChange={(e) => setImportanceFilter(e.target.value)}
+              className="filter-select"
+            >
+              <option value="ALL">All Priorities</option>
+              <option value="HIGH">High Priority</option>
+              <option value="MEDIUM">Medium Priority</option>
+              <option value="LOW">Low Priority</option>
+            </select>
+          </div>
+        )}
+
+        {/* Rest of the header content */}
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <button
             onClick={toggleTheme}
@@ -815,10 +883,10 @@ function App() {
         </div>
       )}
 
-      {isConnected && (displayedNotifications.length > 0 || isLoadingMore) && (
+      {isConnected && (filteredNotifications.length > 0 || isLoadingMore) && (
         <div className="notification-list-container">
           <div className="notification-list">
-            {displayedNotifications.map((notification) => (
+            {filteredNotifications.map((notification) => (
               <NotificationItem key={notification.id} notification={notification} />
             ))}
 
