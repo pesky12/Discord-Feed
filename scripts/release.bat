@@ -1,7 +1,12 @@
 @echo off
-:: Simple script to create a new release on Windows
 
-:: Check if a version was provided
+REM Release script for Discord Notification Feed (Windows)
+REM Usage: scripts\release.bat <version>
+REM Example: scripts\release.bat 1.0.0
+REM - Updates version in package.json
+REM - Creates and pushes a git tag
+REM - Triggers GitHub Actions release workflow
+
 if "%~1"=="" (
   echo Error: No version specified
   echo Usage: scripts\release.bat ^<version^>
@@ -11,25 +16,20 @@ if "%~1"=="" (
 
 set VERSION=%~1
 
-:: Make sure the version starts with "v"
+REM Ensure version has v prefix
 if not "%VERSION:~0,1%"=="v" (
   set VERSION=v%VERSION%
 )
 
-:: Display the action we're taking
 echo Updating version in package.json to %VERSION%...
 
-:: This would ideally use a tool like jq to modify the package.json
-:: But for simplicity, you can manually update the version in package.json
 echo Please manually update the version in package.json to %VERSION:~1% and press any key to continue...
 pause > nul
 
-:: Commit the changes
 echo Committing changes...
 git add package.json
 git commit -m "Bump version to %VERSION%"
 
-:: Create and push the tag
 echo Creating and pushing tag %VERSION%...
 git tag %VERSION%
 git push origin main

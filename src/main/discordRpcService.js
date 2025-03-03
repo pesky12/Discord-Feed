@@ -5,35 +5,53 @@ import { join } from 'path'
 import fs from 'fs'
 import { initOpenAIService, getOpenAIService } from './openAiService'
 
-// Will hold our notification data
+/**
+ * In-memory storage for Discord notifications with a maximum limit
+ * @type {Array<Object>}
+ */
 let notifications = []
+
+/**
+ * Global state and references
+ */
 let isConnected = false
 let client = null
 let guildLookup = []
-let mainWindowRef = null // Store reference to the main window
+let mainWindowRef = null
 
-// Maximum number of notifications to keep in memory
+/**
+ * Maximum number of notifications to keep in memory
+ * Prevents memory leaks while maintaining a reasonable history
+ */
 const MAX_NOTIFICATIONS = 1000
 
-// Default settings
+/**
+ * Default application settings
+ */
 let settings = {
   clientId: '',
   clientSecret: '',
   openaiApiKey: '',
   openaiApiEndpoint: 'https://api.openai.com/v1',
   enableSummarization: false,
-  summaryDetectionMode: 'length', // 'length' or 'smart'
-  minLengthForSummary: 100       // Minimum character count for summarization in length mode
+  summaryDetectionMode: 'length',
+  minLengthForSummary: 100
 }
 
-// Get settings file path
-const getSettingsPath = () => {
+/**
+ * Gets the path to the settings file in user data directory
+ * @returns {string} Full path to settings file
+ */
+function getSettingsPath() {
   const userDataPath = app.getPath('userData')
   return join(userDataPath, 'discord-settings.json')
 }
 
-// Load settings from file
-const loadSettings = () => {
+/**
+ * Loads settings from disk, creating defaults if needed
+ * Handles corrupted settings by creating backups
+ */
+function loadSettings() {
   const settingsPath = getSettingsPath()
   try {
     if (fs.existsSync(settingsPath)) {
@@ -44,11 +62,10 @@ const loadSettings = () => {
         settings = { ...settings, ...loadedSettings }
       } catch (parseError) {
         console.error('Failed to parse settings file:', parseError)
-        // File exists but is invalid JSON, back it up and create a new one
         const backupPath = `${settingsPath}.backup-${Date.now()}`
         fs.copyFileSync(settingsPath, backupPath)
         console.log('Created backup of invalid settings file at:', backupPath)
-        saveSettings() // Create a new file with default settings
+        saveSettings()
       }
     } else {
       console.log('Settings file does not exist, will create on first save')
@@ -58,11 +75,13 @@ const loadSettings = () => {
   }
 }
 
-// Save settings to file
-const saveSettings = () => {
+/**
+ * Saves current settings to disk with proper error handling
+ * Creates directories if they don't exist
+ */
+function saveSettings() {
   const settingsPath = getSettingsPath()
   try {
-    // Make sure the directory exists
     const directory = join(settingsPath, '..')
     if (!fs.existsSync(directory)) {
       fs.mkdirSync(directory, { recursive: true })
@@ -75,7 +94,12 @@ const saveSettings = () => {
   }
 }
 
-// Generate summary for a message using OpenAI
+/**
+ * Generates an AI summary for a message using the OpenAI service
+ * @param {string} message - The message content to summarize
+ * @param {Object} context - Additional context about the message
+ * @returns {Promise<string|null>} The generated summary or null if unavailable
+ */
 async function generateMessageSummary(message, context = {}) {
   if (!settings.enableSummarization) return null;
   
@@ -90,42 +114,34 @@ async function generateMessageSummary(message, context = {}) {
   }
 }
 
-// Initialize the Discord RPC client
+/**
+ * Initializes the Discord RPC client and sets up IPC communication
+ * Handles connection state, notifications, and settings management
+ * @param {BrowserWindow} mainWindow - The main application window
+ */
 export function initDiscordRpc(mainWindow) {
-  // Store reference to the main window
   mainWindowRef = mainWindow
-  
-  // Load settings
   loadSettings()
-  
-  // Initialize OpenAI service with settings
   initOpenAIService(settings)
 
-  // Handle settings update
+  // IPC Handlers for renderer communication
   ipcMain.handle('discord:update-settings', async (_, newSettings) => {
-    // Update settings
     settings = { ...settings, ...newSettings }
     saveSettings()
-    
-    // Update OpenAI service settings
     getOpenAIService().updateSettings(newSettings)
-    
     return { success: true }
   })
 
-  // Handle getting settings
   ipcMain.handle('discord:get-settings', async () => {
     return settings
   })
 
-  // Listen for connection request from renderer
   ipcMain.handle('discord:connect', async () => {
     try {
       if (client) {
         return { success: true, isConnected }
       }
 
-      // Check if client ID and secret are provided and not empty
       if (!settings.clientId?.trim() || !settings.clientSecret?.trim()) {
         console.error('Missing or empty client ID or secret')
         return {
@@ -140,10 +156,9 @@ export function initDiscordRpc(mainWindow) {
         transport: {
           type: 'ipc'
         },
-        redirectUri: 'http://localhost:5173'  // Add proper redirect URI
+        redirectUri: 'http://localhost:5173'
       })
 
-      // Set up event handlers
       client.on('ready', async () => {
         console.log('Connected to Discord')
         isConnected = true
@@ -178,12 +193,10 @@ export function initDiscordRpc(mainWindow) {
         const notification = await processNotification(data)
         notifications.unshift(notification)
 
-        // Limit the total number of stored notifications
         if (notifications.length > MAX_NOTIFICATIONS) {
           notifications = notifications.slice(0, MAX_NOTIFICATIONS)
         }
 
-        // Send to renderer
         mainWindow.webContents.send('discord:notification', notification)
       })
 
@@ -194,10 +207,9 @@ export function initDiscordRpc(mainWindow) {
         mainWindow.webContents.send('discord:connection-change', isConnected)
       })
 
-      // Login
       await client.login({
         scopes: ['rpc', 'rpc.notifications.read', 'guilds', 'messages.read', 'rpc.voice.read'],
-        prompt: 'none' // Only prompt once
+        prompt: 'none'
       })
 
       return { success: true, isConnected: true }
@@ -207,7 +219,6 @@ export function initDiscordRpc(mainWindow) {
     }
   })
 
-  // Listen for disconnect request
   ipcMain.handle('discord:disconnect', async () => {
     try {
       if (client) {
@@ -224,13 +235,10 @@ export function initDiscordRpc(mainWindow) {
     }
   })
 
-  // Listen for request to get all notifications
   ipcMain.handle('discord:get-notifications', () => {
-    // Initially return a smaller batch of notifications
     return notifications.slice(0, 20)
   })
 
-  // Listen for request to get paginated notifications
   ipcMain.handle('discord:get-notifications-page', (_, { page, perPage }) => {
     const startIndex = 0
     const endIndex = page * perPage
@@ -241,13 +249,16 @@ export function initDiscordRpc(mainWindow) {
     }
   })
 
-  // Listen for connection status check
   ipcMain.handle('discord:is-connected', () => {
     return isConnected
   })
 }
 
-// Helper function to process a notification
+/**
+ * Processes a Discord notification and enriches it with AI features
+ * @param {Object} data - Raw notification data from Discord
+ * @returns {Promise<Object>} Processed notification with summaries and categories
+ */
 async function processNotification(data) {
   const serverInfo = getServerFromChannel(data.channel_id)
   const isUnknown = typeof serverInfo === 'string'
@@ -257,10 +268,11 @@ async function processNotification(data) {
   let category = null;
   let importance = null;
   
+  // Add AI enrichment if enabled
   const openAIService = getOpenAIService();
   if (settings.enableSummarization && data.body && openAIService.isEnabled()) {
     try {
-      // Get categorization only for non-DM messages
+      // Categorize non-DM messages
       if (!isDM) {
         const categorization = await openAIService.categorizeMessage(data.body, isDM);
         if (categorization) {
@@ -269,16 +281,14 @@ async function processNotification(data) {
         }
       }
       
-      // Check if we need a summary
       const needsSummary = await openAIService.shouldSummarize(data.body);
       summaryPending = needsSummary;
-
     } catch (error) {
       console.error('Error in AI processing:', error);
     }
   }
 
-  // Build context for message processing
+  // Build message context for AI processing
   const context = {
     isDM,
     channel: isDM ? 'Direct Message' : serverInfo.channel,
@@ -286,7 +296,7 @@ async function processNotification(data) {
     recentMessages: []
   };
   
-  // Create the notification object
+  // Construct the enriched notification object
   const notification = {
     id: data.message.id,
     title: data.title,
@@ -309,19 +319,18 @@ async function processNotification(data) {
     }
   }
   
-  // If summarization is enabled and this message is pending summarization,
-  // start the summary generation process in the background
+  // Generate summary asynchronously if needed
   if (summaryPending) {
     generateMessageSummary(data.body, context).then(summary => {
       if (summary) {
-        // Find notification in our array and update it
+        // Update notification in memory
         const index = notifications.findIndex(n => n.id === notification.id)
         if (index !== -1) {
           notifications[index].summary = summary
           notifications[index].summaryPending = false
         }
         
-        // Notify the renderer process about the updated summary
+        // Notify renderer of summary update
         if (mainWindowRef && !mainWindowRef.isDestroyed()) {
           mainWindowRef.webContents.send('discord:summary-update', { 
             id: notification.id, 
@@ -329,7 +338,7 @@ async function processNotification(data) {
           })
         }
       } else {
-        // If no summary was generated, update the pending status to false
+        // Handle failed summarization
         const index = notifications.findIndex(n => n.id === notification.id)
         if (index !== -1) {
           notifications[index].summaryPending = false
@@ -346,6 +355,7 @@ async function processNotification(data) {
     }).catch(error => {
       console.error('Error generating summary asynchronously:', error)
       
+      // Handle errors gracefully
       const index = notifications.findIndex(n => n.id === notification.id)
       if (index !== -1) {
         notifications[index].summaryPending = false
@@ -364,6 +374,11 @@ async function processNotification(data) {
   return notification
 }
 
+/**
+ * Looks up server and channel information from a channel ID
+ * @param {string} channelID - Discord channel ID
+ * @returns {Object|string} Server info object or 'Unknown Server' if not found
+ */
 function getServerFromChannel(channelID) {
   for (const guild of guildLookup) {
     for (const channel of guild.channels) {
@@ -375,7 +390,10 @@ function getServerFromChannel(channelID) {
   return 'Unknown Server'
 }
 
-// Helper function to generate a test notification for development/testing
+/**
+ * Creates a test notification for development and testing purposes
+ * @param {BrowserWindow} mainWindow - The main application window
+ */
 export function createTestNotification(mainWindow) {
   if (!mainWindow) return;
 
@@ -395,7 +413,6 @@ export function createTestNotification(mainWindow) {
 
   const now = new Date();
   
-  // Create a mock notification object
   const mockNotification = {
     message: {
       id: `test-${Date.now()}`,
@@ -408,17 +425,13 @@ export function createTestNotification(mainWindow) {
     channel_id: "test-channel"
   };
 
-  // Process it like a regular notification
   processNotification(mockNotification).then(notification => {
-    // Add to the notifications list
     notifications.unshift(notification);
     
-    // Limit the total number of stored notifications
     if (notifications.length > MAX_NOTIFICATIONS) {
       notifications = notifications.slice(0, MAX_NOTIFICATIONS);
     }
 
-    // Send to renderer
     mainWindow.webContents.send('discord:notification', notification);
   });
 }

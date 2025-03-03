@@ -5,10 +5,17 @@ import icon from '../../resources/icon.png?asset'
 import { initDiscordRpc, createTestNotification } from './discordRpcService'
 import { getOpenAIService } from './openAiService'
 
+/**
+ * Reference to the main application window
+ * Stored globally to prevent garbage collection
+ */
 let mainWindow = null
 
+/**
+ * Creates and configures the main application window
+ * Sets up window event handlers and loads the renderer content
+ */
 function createWindow() {
-  // Create the browser window.
   mainWindow = new BrowserWindow({
     width: 900,
     height: 670,
@@ -21,20 +28,21 @@ function createWindow() {
     }
   })
 
-  // Initialize Discord RPC service
+  // Initialize Discord RPC integration
   initDiscordRpc(mainWindow)
 
+  // Show window when ready
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
   })
 
+  // Handle external links securely
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
 
-  // HMR for renderer base on electron-vite cli.
-  // Load the remote URL for development or the local html file for production.
+  // Load appropriate content based on environment
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
@@ -42,60 +50,54 @@ function createWindow() {
   }
 }
 
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
+// Initialize app when ready
 app.whenReady().then(() => {
-  // Set app user model id for windows
+  // Set app metadata for Windows
   electronApp.setAppUserModelId('com.electron')
 
-  // Default open or close DevTools by F12 in development
-  // and ignore CommandOrControl + R in production.
-  // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
+  // Enable shortcuts in new windows
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
 
   createWindow()
 
-  // Register keyboard shortcut for test notifications (Ctrl+Shift+T)
+  // Register global shortcut for test notifications (Ctrl/Cmd+Shift+T)
   globalShortcut.register('CommandOrControl+Shift+T', () => {
     console.log('Test notification triggered via keyboard shortcut')
     createTestNotification(mainWindow)
   })
 
+  // Handle macOS app activation
   app.on('activate', function () {
-    // On macOS it's common to re-create a window in the app when the
-    // dock icon is clicked and there are no other windows open.
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 
-  // Unregister shortcuts when app is about to quit
+  // Clean up shortcuts on quit
   app.on('will-quit', () => {
     globalShortcut.unregisterAll()
   })
 })
 
-// Quit when all windows are closed, except on macOS. There, it's common
-// for applications and their menu bar to stay active until the user quits
-// explicitly with Cmd + Q.
+// Handle window close behavior
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
 })
 
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and require them here.
+/**
+ * IPC Handlers for renderer communication
+ */
 
-// Handle opening external links
+// Handle external link opening
 ipcMain.on('open-external', (_, url) => {
   if (url && typeof url === 'string') {
     shell.openExternal(url)
   }
 })
 
-// Allow manually triggering a summary for specific content
+// Handle message summarization requests
 ipcMain.handle('summarize-message', async (_, content) => {
   try {
     if (!content || typeof content !== 'string') {
@@ -110,13 +112,13 @@ ipcMain.handle('summarize-message', async (_, content) => {
   }
 })
 
-// Add IPC handler for test notification
+// Handle test notification requests
 ipcMain.handle('discord:create-test-notification', () => {
   createTestNotification(mainWindow)
   return { success: true }
 })
 
-// Add IPC handler for testing LLM connection
+// Handle LLM connection testing
 ipcMain.handle('discord:test-llm-connection', async (_, settings) => {
   try {
     const { apiKey, apiEndpoint } = settings
@@ -128,27 +130,24 @@ ipcMain.handle('discord:test-llm-connection', async (_, settings) => {
       }
     }
 
-    // Create a test message for a quick connection check
-    const testMessage = "Hello, this is a test message to check the connection."
-    
-    // Use similar code as in OpenAIService but don't reuse the instance
-    // This allows testing different settings before saving them
+    // Build endpoint URL ensuring no trailing slashes
     const endpoint = `${apiEndpoint.replace(/\/+$/, '')}/chat/completions`
     
+    // Configure headers with optional authentication
     const headers = {
       'Content-Type': 'application/json'
     }
     
-    // Only add Authorization header if API key is provided
     if (apiKey && apiKey.trim() !== '') {
       headers['Authorization'] = `Bearer ${apiKey}`
     }
     
+    // Test the connection with a simple request
     const response = await fetch(endpoint, {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        model: 'gpt-3.5-turbo', // Use a common model name
+        model: 'gpt-3.5-turbo',
         messages: [
           { role: 'system', content: 'You are a helpful assistant.' },
           { role: 'user', content: 'Say hello for a connection test!' }
@@ -167,6 +166,7 @@ ipcMain.handle('discord:test-llm-connection', async (_, settings) => {
       }
     }
 
+    // Validate response format
     const data = await response.json()
     if (data.choices && data.choices.length > 0) {
       return { 

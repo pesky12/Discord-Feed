@@ -1,14 +1,27 @@
-// filepath: p:\Projects\Discord-Feed\src\main\openAiService.js
 import { app } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
 import path from 'path'
 
-// Default model to use for summaries
+/**
+ * Default model to use for OpenAI API calls
+ */
 const DEFAULT_MODEL = 'gpt-3.5-turbo'
 
-// OpenAI API client
+/**
+ * Service for handling AI-powered message processing using OpenAI or compatible APIs.
+ * Supports summarization, categorization, and smart detection of message importance.
+ */
 export class OpenAIService {
+  /**
+   * Creates a new OpenAIService instance
+   * @param {Object} settings - Configuration settings
+   * @param {string} settings.openaiApiKey - API key for authentication (optional for some endpoints)
+   * @param {string} settings.openaiApiEndpoint - Base URL for API endpoint
+   * @param {boolean} settings.enableSummarization - Whether to enable AI summarization
+   * @param {string} settings.summaryDetectionMode - Method to determine if summarization is needed ('length' or 'smart')
+   * @param {number} settings.minLengthForSummary - Minimum character length for summarization in length mode
+   */
   constructor(settings = {}) {
     this.apiKey = settings.openaiApiKey || ''
     this.apiEndpoint = settings.openaiApiEndpoint || 'https://api.openai.com/v1'
@@ -17,6 +30,10 @@ export class OpenAIService {
     this.minLength = settings.minLengthForSummary || 100
   }
 
+  /**
+   * Updates service settings without requiring a new instance
+   * @param {Object} settings - New settings to apply
+   */
   updateSettings(settings = {}) {
     this.apiKey = settings.openaiApiKey || this.apiKey
     this.apiEndpoint = settings.openaiApiEndpoint || this.apiEndpoint
@@ -26,48 +43,43 @@ export class OpenAIService {
   }
 
   /**
-   * Check if the AI summarization service is enabled and configured
+   * Checks if the AI service is properly configured and enabled
+   * @returns {boolean} True if ready to use, false otherwise
    */
   isEnabled() {
-    // Only require that summarization is enabled and an endpoint is provided
-    // API key is now optional for all endpoints
     return this.enabled && this.apiEndpoint && this.apiEndpoint.trim() !== '';
   }
 
   /**
-   * Check if a message needs summarization based on configured detection mode
-   * @param {string} messageContent - The message content to check
-   * @returns {Promise<boolean>} - Whether the message needs summarization
+   * Determines if a message needs AI summarization based on configuration
+   * @param {string} messageContent - The message to evaluate
+   * @returns {Promise<boolean>} True if summarization is needed
    */
   async shouldSummarize(messageContent) {
     if (!this.isEnabled() || !messageContent || messageContent.trim() === '') {
       return false;
     }
 
-    // Simple length-based check
     if (this.detectionMode === 'length') {
       return messageContent.length >= this.minLength;
     }
     
-    // Smart AI-based check
     if (this.detectionMode === 'smart') {
       try {
         return await this.checkSummarizationNeed(messageContent);
       } catch (error) {
         console.error('Error checking if message needs summarization:', error);
-        // Fall back to length check if smart check fails
         return messageContent.length >= this.minLength;
       }
     }
     
-    // Default to length check if mode is invalid
     return messageContent.length >= this.minLength;
   }
 
   /**
-   * Use AI to determine if a message needs summarization
-   * @param {string} messageContent - The message to analyze
-   * @returns {Promise<boolean>} - Whether the message needs summarization
+   * Uses AI to determine if a message needs summarization based on content and context
+   * @param {string} messageContent - The message to evaluate
+   * @returns {Promise<boolean>} True if AI determines summarization would be helpful
    */
   async checkSummarizationNeed(messageContent) {
     try {
@@ -114,7 +126,7 @@ Respond with ONLY "YES" or "NO" - should this message be summarized?`;
 
       if (!response.ok) {
         console.error('LLM API error when checking for summarization need');
-        return messageContent.length >= this.minLength; // Fall back to length check
+        return messageContent.length >= this.minLength;
       }
 
       const data = await response.json();
@@ -123,25 +135,28 @@ Respond with ONLY "YES" or "NO" - should this message be summarized?`;
         return answer === 'YES';
       }
       
-      return messageContent.length >= this.minLength; // Fall back to length check
+      return messageContent.length >= this.minLength;
     } catch (error) {
       console.error('Error in checkSummarizationNeed:', error);
-      return messageContent.length >= this.minLength; // Fall back to length check
+      return messageContent.length >= this.minLength;
     }
   }
 
   /**
-   * Create a summary of a message using OpenAI API
-   * @param {string} messageContent - The Discord message content to summarize
-   * @param {object} context - Additional context about the message
-   * @returns {Promise<string|null>} - The summary or null if failed
+   * Generates a concise summary of a Discord message using AI
+   * @param {string} messageContent - The message to summarize
+   * @param {Object} context - Additional context about the message
+   * @param {string} context.channel - The channel name
+   * @param {string} context.author - The message author
+   * @param {Array} context.recentMessages - Recent messages in the conversation
+   * @param {boolean} context.isDM - Whether this is a direct message
+   * @returns {Promise<string|null>} The generated summary or null if unavailable
    */
   async summarizeMessage(messageContent, context = {}) {
     if (!this.enabled || !messageContent || messageContent.trim() === '') {
       return null;
     }
 
-    // First check if the message needs summarization
     const needsSummary = await this.shouldSummarize(messageContent);
     if (!needsSummary) {
       return null;
@@ -150,12 +165,10 @@ Respond with ONLY "YES" or "NO" - should this message be summarized?`;
     try {
       const endpoint = `${this.apiEndpoint.replace(/\/+$/, '')}/chat/completions`;
       
-      // Build system prompt with context
       let systemPrompt = `You are a helpful assistant that summarizes Discord messages in a brief and concise way.
 You understand conversation context and Discord's communication style.
 Consider the following context when analyzing messages:`;
 
-      // Add context if available
       if (context.channel) systemPrompt += `\n- Channel: ${context.channel}`;
       if (context.author) systemPrompt += `\n- Author: ${context.author}`;
       if (context.recentMessages) {
@@ -206,13 +219,12 @@ Consider the following context when analyzing messages:`;
   }
 
   /**
-   * Categorize a message using AI
-   * @param {string} messageContent - The message content to categorize
-   * @param {boolean} isDM - Whether the message is from a DM channel
-   * @returns {Promise<Object>} - The category and importance level
+   * Analyzes a message to determine its category and importance level
+   * @param {string} messageContent - The message to categorize
+   * @param {boolean} isDM - Whether this is a direct message
+   * @returns {Promise<Object|null>} Categorization result with category and importance, or null
    */
   async categorizeMessage(messageContent, isDM = false) {
-    // Skip categorization for DM messages
     if (isDM) {
       return null;
     }
@@ -224,6 +236,7 @@ Consider the following context when analyzing messages:`;
     try {
       const endpoint = `${this.apiEndpoint.replace(/\/+$/, '')}/chat/completions`;
       
+      // Define the analysis prompt with clear criteria
       const prompt = `Analyze the following Discord message and categorize it:
 Message: "${messageContent}"
 
@@ -234,9 +247,7 @@ Respond in JSON format with two fields:
 Base the importance on:
 - HIGH: Critical announcements, time-sensitive events, urgent questions
 - MEDIUM: Regular updates, general questions, upcoming events
-- LOW: Casual conversation, social chat
-
-Provide ONLY the JSON response, no additional text.`;
+- LOW: Casual conversation, social chat`;
       
       const headers = {
         'Content-Type': 'application/json'
@@ -254,7 +265,7 @@ Provide ONLY the JSON response, no additional text.`;
           messages: [
             { 
               role: 'system', 
-              content: `You are a helpful assistant that categorizes Discord messages. You understand the context and flow of Discord conversations. Respond only with the requested JSON format.` 
+              content: 'You are a helpful assistant that categorizes Discord messages. You understand the context and flow of Discord conversations. Respond only with the requested JSON format.' 
             },
             { role: 'user', content: prompt }
           ],
@@ -271,10 +282,8 @@ Provide ONLY the JSON response, no additional text.`;
       const data = await response.json();
       if (data.choices && data.choices.length > 0 && data.choices[0].message) {
         try {
-          // Parse the JSON response from the message content
           const categorization = JSON.parse(data.choices[0].message.content.trim());
           
-          // Validate the response format
           if (categorization.category && categorization.importance) {
             return categorization;
           }
@@ -291,11 +300,13 @@ Provide ONLY the JSON response, no additional text.`;
   }
 }
 
-// Global instance
+// Singleton instance of the service
 let openAIService = null
 
 /**
- * Initialize the OpenAI service with settings from config file
+ * Initialize the OpenAI service with settings
+ * @param {Object} settings - Service configuration settings
+ * @returns {OpenAIService} The initialized service instance
  */
 export function initOpenAIService(settings = {}) {
   openAIService = new OpenAIService(settings)
@@ -303,7 +314,8 @@ export function initOpenAIService(settings = {}) {
 }
 
 /**
- * Get the OpenAI service instance
+ * Get the current OpenAI service instance or create one with defaults
+ * @returns {OpenAIService} The service instance
  */
 export function getOpenAIService() {
   if (!openAIService) {

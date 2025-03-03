@@ -1,8 +1,12 @@
 #!/bin/bash
 
-# Simple script to create a new release
+# Release script for Discord Notification Feed
+# Usage: ./scripts/release.sh <version>
+# Example: ./scripts/release.sh 1.0.0
+# - Updates version in package.json
+# - Creates and pushes a git tag
+# - Triggers GitHub Actions release workflow
 
-# Check if a version was provided
 if [ -z "$1" ]; then
   echo "Error: No version specified"
   echo "Usage: ./scripts/release.sh <version>"
@@ -12,22 +16,18 @@ fi
 
 VERSION=$1
 
-# Make sure the version starts with "v"
+# Ensure version has v prefix
 if [[ $VERSION != v* ]]; then
   VERSION="v$VERSION"
 fi
 
-# Update version in package.json
-# This uses a simple regex replacement
 echo "Updating version in package.json to $VERSION..."
 sed -i "s/\"version\": \".*\"/\"version\": \"${VERSION#v}\"/" package.json
 
-# Commit the changes
 echo "Committing changes..."
 git add package.json
 git commit -m "Bump version to $VERSION"
 
-# Create and push the tag
 echo "Creating and pushing tag $VERSION..."
 git tag $VERSION
 git push origin main

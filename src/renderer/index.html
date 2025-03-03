@@ -1,9 +1,15 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
   <head>
     <meta charset="UTF-8" />
-    <title>Electron</title>
-    <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
+    <title>Discord Notification Feed</title>
+    
+    <!-- Content Security Policy to protect against XSS and other injection attacks
+         - default-src 'self': Only allow resources from same origin
+         - script-src 'self': Only allow scripts from same origin
+         - style-src 'self' 'unsafe-inline': Allow styles from same origin and inline (required for styled-components)
+         - img-src 'self' data: https://cdn.discordapp.com: Allow images from app, data URIs, and Discord CDN
+    -->
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://cdn.discordapp.com"
@@ -11,7 +17,9 @@
   </head>
 
   <body>
+    <!-- React application root element -->
     <div id="root"></div>
+    <!-- Entry point for React application -->
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
