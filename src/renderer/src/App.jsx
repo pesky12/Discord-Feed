@@ -50,7 +50,7 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
   const [testConnectionResult, setTestConnectionResult] = useState(null)
   const [summaryDetectionMode, setSummaryDetectionMode] = useState(settings.summaryDetectionMode || 'length')
   const [minLengthForSummary, setMinLengthForSummary] = useState(settings.minLengthForSummary || 100)
-
+  const [model, setModel] = useState(settings.model || 'gpt-4o-mini')
   // Update state when settings prop changes
   useEffect(() => {
     if (settings) {
@@ -61,14 +61,15 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
       setEnableSummarization(settings.enableSummarization || false)
       setSummaryDetectionMode(settings.summaryDetectionMode || 'length')
       setMinLengthForSummary(settings.minLengthForSummary || 100)
+      setModel(settings.model || 'gpt-4o-mini')
     }
   }, [settings])
 
   // Function to check if the endpoint appears to be local/self-hosted
   const isLocalEndpoint = (endpoint) => {
     const url = (endpoint || '').toLowerCase()
-    return url.includes('localhost') || 
-           url.includes('127.0.0.1') || 
+    return url.includes('localhost') ||
+           url.includes('127.0.0.1') ||
            url.includes('::1') ||
            url.includes('.local')
   }
@@ -97,9 +98,10 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
       openaiApiEndpoint,
       enableSummarization,
       summaryDetectionMode,
-      minLengthForSummary
+      minLengthForSummary,
+      model
     })
-    
+
     setShowValidation(false)
     onClose()
   }
@@ -108,7 +110,7 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
   const testConnection = async () => {
     if (!openaiApiEndpoint.trim()) {
       setTestConnectionResult({
-        success: false, 
+        success: false,
         message: 'API endpoint is required'
       })
       return
@@ -120,13 +122,14 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
 
       const result = await window.api.discord.testLlmConnection({
         apiKey: openaiApiKey.trim(),
-        apiEndpoint: openaiApiEndpoint.trim()
+        apiEndpoint: openaiApiEndpoint.trim(),
+        model: model.trim() || 'gpt-4o-mini'
       })
 
       if (result.success) {
         setTestConnectionResult({
           success: true,
-          message: 'Connection successful! LLM is working properly.'
+          message: `Connection successful! Model: ${result.modelName || model}`
         })
       } else {
         setTestConnectionResult({
@@ -224,7 +227,7 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
               </div>
             </>
           )}
-          
+
           {currentTab === 'ai' && (
             <>
               <div className="form-group">
@@ -238,7 +241,7 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
                   <span className="toggle-text">Enable AI message summarization</span>
                 </label>
               </div>
-              
+
               {enableSummarization && (
                 <>
                   <div className="form-group">
@@ -259,7 +262,7 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
                       <p>You can use any OpenAI-compatible endpoint, including local servers like Ollama, or cloud services.</p>
                     </div>
                   </div>
-                  
+
                   <div className="form-group">
                     <label htmlFor="openaiApiKey">API Key:</label>
                     <input
@@ -304,7 +307,7 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
                       <p><strong>Smart:</strong> Use AI to determine if a message needs summarization (uses additional API calls)</p>
                     </div>
                   </div>
-                  
+
                   {summaryDetectionMode === 'length' && (
                     <div className="form-group">
                       <label htmlFor="minLengthForSummary">Minimum Message Length for Summarization:</label>
@@ -325,29 +328,46 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
                       </div>
                     </div>
                   )}
-                  
+
                   <div className="test-connection-container">
-                    <button 
-                      onClick={testConnection} 
+                    <button
+                      onClick={testConnection}
                       className="test-connection-button"
                       disabled={testingConnection}
                     >
                       {testingConnection ? 'Testing...' : 'Test Connection'}
                     </button>
-                    
+
                     {testConnectionResult && (
                       <div className={`test-connection-result ${testConnectionResult.success ? 'success' : 'error'}`}>
                         {testConnectionResult.message}
                       </div>
                     )}
                   </div>
-                  
+
                   <div className="form-note">
                     <p>Message summarization uses AI to create short summaries of Discord messages.</p>
                     <p>You can use OpenAI's API, a local LLM server like Ollama, or network servers with no authentication.</p>
                   </div>
                 </>
               )}
+
+              {/* Model selection - always visible in AI tab */}
+              <div className="form-group">
+                <label htmlFor="model">Model:</label>
+                <input
+                  type="text"
+                  id="model"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder="Enter your OpenAI model name"
+                />
+                <div className="form-help">
+                  <p>Default: <code>gpt-4o-mini</code></p>
+                  <p>Common models: gpt-4o, gpt-3.5-turbo, gpt-4, llama3, claude-3-haiku</p>
+                  <p>For local LLMs like Ollama, use the model name as configured in your server</p>
+                </div>
+              </div>
             </>
           )}
         </div>
@@ -374,7 +394,8 @@ SettingsModal.propTypes = {
     openaiApiEndpoint: PropTypes.string,
     enableSummarization: PropTypes.bool,
     summaryDetectionMode: PropTypes.string,
-    minLengthForSummary: PropTypes.number
+    minLengthForSummary: PropTypes.number,
+    model: PropTypes.string
   }).isRequired,
   onSave: PropTypes.func.isRequired
 }
@@ -391,11 +412,11 @@ const NotificationItem = ({ notification }) => {
         if (localUrl) setAvatarSrc(localUrl)
       })
     }
-    
+
     // Check if we should load summary asynchronously
     if (notification.summaryPending && notification.body) {
       setSummaryLoading(true)
-      
+
       // Listen for summary updates for this specific notification
       const handleSummaryUpdate = (_, { id, summary, cancelled }) => {
         if (id === notification.id) {
@@ -406,10 +427,10 @@ const NotificationItem = ({ notification }) => {
           setSummaryLoading(false)
         }
       }
-      
+
       // Register event listener
       window.electron.ipcRenderer.on('discord:summary-update', handleSummaryUpdate)
-      
+
       // Cleanup event listener when component unmounts
       return () => {
         window.electron.ipcRenderer.removeListener('discord:summary-update', handleSummaryUpdate)
@@ -458,7 +479,7 @@ const NotificationItem = ({ notification }) => {
       <div className="notification-content">
         <div className="notification-title">{notification.title}</div>
         <p className="notification-body">{notification.body}</p>
-        
+
         {summaryLoading ? (
           <div className="notification-summary loading">
             <div className="summary-title">Generating summary...</div>
@@ -533,14 +554,15 @@ function App() {
   const [totalNotifications, setTotalNotifications] = useState(0)
   const notificationsPerPage = 10
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settings, setSettings] = useState({ 
-    clientId: '', 
+  const [settings, setSettings] = useState({
+    clientId: '',
     clientSecret: '',
     openaiApiKey: '',
     openaiApiEndpoint: 'https://api.openai.com/v1',
     enableSummarization: false,
     summaryDetectionMode: 'length',
-    minLengthForSummary: 100
+    minLengthForSummary: 100,
+    model: 'gpt-4o-mini'
   })
   const [theme, setTheme] = useState(() => {
     // Get saved theme or default to system preference
@@ -647,7 +669,8 @@ function App() {
         openaiApiEndpoint: newSettings.openaiApiEndpoint.trim() || 'https://api.openai.com/v1',
         enableSummarization: newSettings.enableSummarization,
         summaryDetectionMode: newSettings.summaryDetectionMode,
-        minLengthForSummary: newSettings.minLengthForSummary
+        minLengthForSummary: newSettings.minLengthForSummary,
+        model: newSettings.model
       }
 
       await window.api.discord.updateSettings(trimmedSettings)
@@ -758,7 +781,7 @@ function App() {
 
     // Add event listener
     window.addEventListener('keydown', handleKeyDown)
-    
+
     // Clean up event listener on unmount
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
@@ -776,12 +799,12 @@ function App() {
     <div className="container">
       <div className="header">
         <h1>Discord Notifications</h1>
-        
+
         {/* Only show filter controls if not in DM view */}
         {!isDMView && displayedNotifications.length > 0 && (
           <div className="filter-controls">
-            <select 
-              value={categoryFilter} 
+            <select
+              value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
               className="filter-select"
             >
@@ -792,8 +815,8 @@ function App() {
               <option value="CASUAL">Casual Chat</option>
             </select>
 
-            <select 
-              value={importanceFilter} 
+            <select
+              value={importanceFilter}
               onChange={(e) => setImportanceFilter(e.target.value)}
               className="filter-select"
             >

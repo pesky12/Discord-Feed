@@ -3,10 +3,8 @@ import { join } from 'path'
 import fs from 'fs'
 import path from 'path'
 
-/**
- * Default model to use for OpenAI API calls
- */
-const DEFAULT_MODEL = 'gpt-3.5-turbo'
+// Default model to use for summaries
+const DEFAULT_MODEL = 'gpt-4o-mini'
 
 /**
  * Service for handling AI-powered message processing using OpenAI or compatible APIs.
@@ -28,6 +26,7 @@ export class OpenAIService {
     this.enabled = settings.enableSummarization || false
     this.detectionMode = settings.summaryDetectionMode || 'length'
     this.minLength = settings.minLengthForSummary || 100
+    this.model = settings.model || DEFAULT_MODEL
   }
 
   /**
@@ -40,6 +39,7 @@ export class OpenAIService {
     this.enabled = settings.enableSummarization !== undefined ? settings.enableSummarization : this.enabled
     this.detectionMode = settings.summaryDetectionMode || this.detectionMode
     this.minLength = settings.minLengthForSummary || this.minLength
+    this.model = settings.model || this.model
   }
 
   /**
@@ -63,7 +63,7 @@ export class OpenAIService {
     if (this.detectionMode === 'length') {
       return messageContent.length >= this.minLength;
     }
-    
+
     if (this.detectionMode === 'smart') {
       try {
         return await this.checkSummarizationNeed(messageContent);
@@ -72,7 +72,7 @@ export class OpenAIService {
         return messageContent.length >= this.minLength;
       }
     }
-    
+
     return messageContent.length >= this.minLength;
   }
 
@@ -84,7 +84,7 @@ export class OpenAIService {
   async checkSummarizationNeed(messageContent) {
     try {
       const endpoint = `${this.apiEndpoint.replace(/\/+$/, '')}/chat/completions`;
-      
+
       const prompt = `Analyze the following Discord message and determine if it needs summarization.
 Message: "${messageContent}"
 
@@ -101,20 +101,20 @@ A message does NOT need summarization if:
 5. It's just an emoji or sticker
 
 Respond with ONLY "YES" or "NO" - should this message be summarized?`;
-      
+
       const headers = {
         'Content-Type': 'application/json'
       };
-      
+
       if (this.apiKey && this.apiKey.trim() !== '') {
         headers['Authorization'] = `Bearer ${this.apiKey}`;
       }
-      
+
       const response = await fetch(endpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          model: DEFAULT_MODEL,
+          model: this.model,
           messages: [
             { role: 'system', content: 'You are a helpful assistant that determines if Discord messages need summarization.' },
             { role: 'user', content: prompt }
@@ -134,7 +134,7 @@ Respond with ONLY "YES" or "NO" - should this message be summarized?`;
         const answer = data.choices[0].message.content.trim().toUpperCase();
         return answer === 'YES';
       }
-      
+
       return messageContent.length >= this.minLength;
     } catch (error) {
       console.error('Error in checkSummarizationNeed:', error);
@@ -164,7 +164,7 @@ Respond with ONLY "YES" or "NO" - should this message be summarized?`;
 
     try {
       const endpoint = `${this.apiEndpoint.replace(/\/+$/, '')}/chat/completions`;
-      
+
       let systemPrompt = `You are a helpful assistant that summarizes Discord messages in a brief and concise way.
 You understand conversation context and Discord's communication style.
 Consider the following context when analyzing messages:`;
@@ -177,20 +177,20 @@ Consider the following context when analyzing messages:`;
       if (context.isDM) systemPrompt += `\n- This is a direct message conversation`;
 
       const prompt = `Please provide a brief, concise summary (1-2 sentences) of the following Discord message${context.isDM ? ' from this DM conversation' : ''}: "${messageContent}"`;
-      
+
       const headers = {
         'Content-Type': 'application/json'
       };
-      
+
       if (this.apiKey && this.apiKey.trim() !== '') {
         headers['Authorization'] = `Bearer ${this.apiKey}`;
       }
-      
+
       const response = await fetch(endpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          model: DEFAULT_MODEL,
+          model: this.model,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: prompt }
@@ -210,7 +210,7 @@ Consider the following context when analyzing messages:`;
       if (data.choices && data.choices.length > 0 && data.choices[0].message) {
         return data.choices[0].message.content.trim()
       }
-      
+
       return null
     } catch (error) {
       console.error('Failed to generate summary:', error)
@@ -235,7 +235,7 @@ Consider the following context when analyzing messages:`;
 
     try {
       const endpoint = `${this.apiEndpoint.replace(/\/+$/, '')}/chat/completions`;
-      
+
       // Define the analysis prompt with clear criteria
       const prompt = `Analyze the following Discord message and categorize it:
 Message: "${messageContent}"
@@ -248,24 +248,24 @@ Base the importance on:
 - HIGH: Critical announcements, time-sensitive events, urgent questions
 - MEDIUM: Regular updates, general questions, upcoming events
 - LOW: Casual conversation, social chat`;
-      
+
       const headers = {
         'Content-Type': 'application/json'
       };
-      
+
       if (this.apiKey && this.apiKey.trim() !== '') {
         headers['Authorization'] = `Bearer ${this.apiKey}`;
       }
-      
+
       const response = await fetch(endpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          model: DEFAULT_MODEL,
+          model: this.model,
           messages: [
-            { 
-              role: 'system', 
-              content: 'You are a helpful assistant that categorizes Discord messages. You understand the context and flow of Discord conversations. Respond only with the requested JSON format.' 
+            {
+              role: 'system',
+              content: 'You are a helpful assistant that categorizes Discord messages. You understand the context and flow of Discord conversations. Respond only with the requested JSON format.'
             },
             { role: 'user', content: prompt }
           ],
@@ -283,7 +283,7 @@ Base the importance on:
       if (data.choices && data.choices.length > 0 && data.choices[0].message) {
         try {
           const categorization = JSON.parse(data.choices[0].message.content.trim());
-          
+
           if (categorization.category && categorization.importance) {
             return categorization;
           }
@@ -291,7 +291,7 @@ Base the importance on:
           console.error('Error parsing categorization response:', parseError);
         }
       }
-      
+
       return null;
     } catch (error) {
       console.error('Error in categorizeMessage:', error);
