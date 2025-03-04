@@ -872,3 +872,45 @@ h1 {
 .response-type-followup {
   display: none;
 }
+
+/* Calendar button styling */
+.ant-btn-text {
+  color: var(--text-color) !important;
+}
+
+.ant-btn-text:hover {
+  background-color: var(--hover-background) !important;
+  color: var(--primary-color) !important;
+}
+
+.ant-btn-text .anticon {
+  color: var(--text-color) !important;
+}
+
+.ant-btn-text:hover .anticon {
+  color: var(--primary-color) !important;
+}
+
+.ant-dropdown-menu {
+  background-color: var(--card-background) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+.ant-dropdown-menu-item {
+  color: var(--text-color) !important;
+}
+
+.ant-dropdown-menu-item:hover {
+  background-color: var(--hover-background) !important;
+}
+
+/* Discord timestamp styling */
+.discord-timestamp {
+  color: var(--primary-color);
+  cursor: default;
+  font-weight: 500;
+}
+
+.discord-timestamp:hover {
+  text-decoration: underline;
+}

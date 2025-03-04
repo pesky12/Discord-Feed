@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import PropTypes from 'prop-types'
 import './App.css'
+import CalendarEventButton from './components/CalendarEventButton'
 
 // Sun icon for light theme toggle
 const SunIcon = () => (
@@ -33,9 +34,129 @@ const SettingsIcon = () => (
 
 // Format the timestamp into a human-readable form
 const formatTimestamp = (timestamp) => {
-  const date = new Date(timestamp)
-  return date.toLocaleString()
-}
+  // Check if the timestamp is in Discord's <t:timestamp:format> format
+  if (typeof timestamp === 'string') {
+    const discordTimestampRegex = /<t:(\d+):([tTdDfFR])>/g;
+    const match = discordTimestampRegex.exec(timestamp);
+    
+    if (match) {
+      const unixTimestamp = parseInt(match[1]);
+      const format = match[2];
+      return formatDiscordTimestamp(unixTimestamp, format);
+    }
+  }
+  
+  // Fall back to regular timestamp handling
+  const date = new Date(timestamp);
+  return date.toLocaleString();
+};
+
+/**
+ * Formats a Discord timestamp tag into human-readable text
+ * @param {string} timestamp - Unix timestamp
+ * @param {string} format - Discord format type (t, T, d, D, f, F, R)
+ * @returns {string} Formatted timestamp
+ */
+const formatDiscordTimestamp = (timestamp, format) => {
+  const date = new Date(timestamp * 1000);
+  
+  switch (format) {
+    case 't': // Short Time (e.g., 2:30 PM)
+      return date.toLocaleTimeString(undefined, { 
+        hour: 'numeric', 
+        minute: '2-digit'
+      });
+    case 'T': // Long Time (e.g., 2:30:20 PM)
+      return date.toLocaleTimeString(undefined, { 
+        hour: 'numeric', 
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    case 'd': // Short Date (e.g., 20/12/2023)
+      return date.toLocaleDateString();
+    case 'D': // Long Date (e.g., December 20, 2023)
+      return date.toLocaleDateString(undefined, { 
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    case 'f': // Short Date/Time (e.g., 20 December 2023 2:30 PM)
+      return date.toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+      });
+    case 'F': // Long Date/Time (e.g., Wednesday, December 20, 2023 2:30 PM)
+      return date.toLocaleString(undefined, {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+      });
+    case 'R': // Relative (e.g., 2 hours ago, in 3 days)
+      const diff = date - new Date();
+      const diffSeconds = Math.abs(Math.round(diff / 1000));
+      const diffMinutes = Math.abs(Math.round(diff / (1000 * 60)));
+      const diffHours = Math.abs(Math.round(diff / (1000 * 60 * 60)));
+      const diffDays = Math.abs(Math.round(diff / (1000 * 60 * 60 * 24)));
+      
+      if (diffDays > 0) {
+        return diff > 0 ? `in ${diffDays} day${diffDays === 1 ? '' : 's'}` : `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
+      }
+      if (diffHours > 0) {
+        return diff > 0 ? `in ${diffHours} hour${diffHours === 1 ? '' : 's'}` : `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
+      }
+      if (diffMinutes > 0) {
+        return diff > 0 ? `in ${diffMinutes} minute${diffMinutes === 1 ? '' : 's'}` : `${diffMinutes} minute${diffMinutes === 1 ? '' : 's'} ago`;
+      }
+      return diff > 0 ? 'in a few seconds' : 'a few seconds ago';
+    default:
+      return date.toLocaleString();
+  }
+};
+
+/**
+ * Formats the message body by replacing Discord timestamp tags with formatted dates
+ * @param {string} text - Message text containing Discord timestamp tags
+ * @returns {Array} Array of text and formatted timestamp elements
+ */
+const formatMessageWithTimestamps = (text) => {
+  if (!text) return [];
+  
+  const timestampRegex = /<t:(\d+):([tTdDfFR])>/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = timestampRegex.exec(text)) !== null) {
+    // Add text before the timestamp
+    if (match.index > lastIndex) {
+      parts.push(text.substring(lastIndex, match.index));
+    }
+    
+    // Add the formatted timestamp
+    const timestamp = parseInt(match[1]);
+    const format = match[2];
+    parts.push(
+      <span key={match.index} className="discord-timestamp">
+        {formatDiscordTimestamp(timestamp, format)}
+      </span>
+    );
+    
+    lastIndex = match.index + match[0].length;
+  }
+  
+  // Add remaining text
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+
+  return parts;
+};
 
 // Settings Modal component
 const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
@@ -404,7 +525,10 @@ SettingsModal.propTypes = {
 const NotificationItem = ({ notification }) => {
   const [avatarSrc, setAvatarSrc] = useState('https://cdn.discordapp.com/embed/avatars/0.png')
   const [summary, setSummary] = useState(notification.summary)
-  const [summaryLoading, setSummaryLoading] = useState(false)
+  const [summaryState, setSummaryState] = useState(
+    notification.summary ? 'complete' : 
+    notification.summaryPending ? 'loading' : 'none'
+  )
 
   useEffect(() => {
     if (notification?.icon && notification.icon.startsWith('https://cdn.discordapp.com')) {
@@ -413,18 +537,23 @@ const NotificationItem = ({ notification }) => {
       })
     }
 
-    // Check if we should load summary asynchronously
-    if (notification.summaryPending && notification.body) {
-      setSummaryLoading(true)
+    // Initialize summary state based on notification
+    const initialSummaryState = notification.summary ? 'complete' : 
+                               notification.summaryPending ? 'loading' : 'none'
+    setSummaryState(initialSummaryState)
+    setSummary(notification.summary)
 
+    // Check if we need to listen for summary updates
+    if (notification.summaryPending && notification.body) {
       // Listen for summary updates for this specific notification
       const handleSummaryUpdate = (_, { id, summary, cancelled }) => {
         if (id === notification.id) {
           if (summary) {
             setSummary(summary)
+            setSummaryState('complete')
+          } else if (cancelled) {
+            setSummaryState('none')
           }
-          // Always stop the loading indicator, whether we got a summary or it was cancelled
-          setSummaryLoading(false)
         }
       }
 
@@ -435,11 +564,6 @@ const NotificationItem = ({ notification }) => {
       return () => {
         window.electron.ipcRenderer.removeListener('discord:summary-update', handleSummaryUpdate)
       }
-    } else {
-      // Set summary from notification if it's already available
-      setSummary(notification.summary)
-      // Ensure loading indicator is not shown if summaryPending is false
-      setSummaryLoading(false)
     }
   }, [notification])
 
@@ -456,7 +580,7 @@ const NotificationItem = ({ notification }) => {
     <div className={`notification-item ${getImportanceClass()}`}>
       <div className="notification-header">
         <img
-          src={notification.icon || 'https://cdn.discordapp.com/embed/avatars/0.png'}
+          src={avatarSrc}
           alt="Avatar"
           className="avatar"
         />
@@ -478,9 +602,13 @@ const NotificationItem = ({ notification }) => {
 
       <div className="notification-content">
         <div className="notification-title">{notification.title}</div>
-        <p className="notification-body">{notification.body}</p>
+        <p className="notification-body">
+          {typeof notification.body === 'string' && notification.body.match(/<t:\d+:[tTdDfFR]>/g) 
+            ? formatMessageWithTimestamps(notification.body) 
+            : notification.body}
+        </p>
 
-        {summaryLoading ? (
+        {summaryState === 'loading' && (
           <div className="notification-summary loading">
             <div className="summary-title">Generating summary...</div>
             <div className="summary-loading-indicator">
@@ -491,15 +619,22 @@ const NotificationItem = ({ notification }) => {
               </div>
             </div>
           </div>
-        ) : summary ? (
+        )}
+
+        {summaryState === 'complete' && summary && (
           <div className="notification-summary">
             <div className="summary-title">AI Summary</div>
             <p className="summary-text">{summary}</p>
           </div>
-        ) : null}
+        )}
       </div>
 
       <div className="notification-meta">
+        <div className="notification-actions">
+          {notification.category === 'EVENT' && (
+            <CalendarEventButton eventData={notification} notificationId={notification.id} />
+          )}
+        </div>
         <span className="server-info">
           {notification.serverName} • #{notification.channelName}
         </span>
@@ -702,6 +837,7 @@ function App() {
 
     // Set up listeners for new notifications and connection changes
     const removeNotificationListener = window.api.discord.onNotification((notification) => {
+      console.log('New notification received:', notification.id)
       // Add the new notification to the top of the displayed list
       setDisplayedNotifications((prev) => [notification, ...prev])
       // Increment total count
@@ -723,9 +859,22 @@ function App() {
       }
     })
 
+    // Add listener for notification updates (category & importance)
+    const removeNotificationUpdateListener = window.api.discord.onNotificationUpdate((update) => {
+      console.log('Notification update received:', update)
+      setDisplayedNotifications((prev) => 
+        prev.map(notification => 
+          notification.id === update.id
+            ? { ...notification, category: update.category, importance: update.importance }
+            : notification
+        )
+      )
+    })
+
     return () => {
       removeNotificationListener()
       removeConnectionListener()
+      removeNotificationUpdateListener()
     }
   }, [])
 

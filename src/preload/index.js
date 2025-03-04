@@ -22,6 +22,11 @@ const api = {
       ipcRenderer.on('discord:connection-change', listener)
       return () => ipcRenderer.removeListener('discord:connection-change', listener)
     },
+    onNotificationUpdate: (callback) => {
+      const listener = (_, update) => callback(update)
+      ipcRenderer.on('discord:notification-update', listener)
+      return () => ipcRenderer.removeListener('discord:notification-update', listener)
+    },
     // Method for manual summarization of message content
     summarizeMessage: (content) => ipcRenderer.invoke('summarize-message', content),
     // Method to generate test notifications
