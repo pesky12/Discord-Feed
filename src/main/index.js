@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, globalShortcut } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, globalShortcut, Tray, Menu } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/Icon.png?asset'
@@ -10,6 +10,7 @@ import { getOpenAIService } from './openAiService'
  * Stored globally to prevent garbage collection
  */
 let mainWindow = null
+let tray = null
 
 /**
  * Creates and configures the main application window
@@ -49,6 +50,41 @@ function createWindow() {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+
+  // Create tray icon
+  tray = new Tray(join(__dirname, '../../resources/icon.png')) // Make sure you have an icon file
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Show App',
+      click: () => {
+        mainWindow.show()
+      }
+    },
+    {
+      label: 'Quit',
+      click: () => {
+        app.quit()
+      }
+    }
+  ])
+
+  tray.setToolTip('Discord Feed')
+  tray.setContextMenu(contextMenu)
+
+  // Handle tray icon click
+  tray.on('click', () => {
+    mainWindow.show()
+  })
+
+  // Update window close behavior
+  mainWindow.on('close', (event) => {
+    if (!app.isQuitting) {
+      event.preventDefault()
+      mainWindow.hide()
+    }
+    return false
+  })
 }
 
 // Initialize app when ready
@@ -81,9 +117,9 @@ app.whenReady().then(() => {
 })
 
 // Handle window close behavior
-app.on('window-all-closed', () => {
+app.on('window-all-closed', (event) => {
   if (process.platform !== 'darwin') {
-    app.quit()
+    event.preventDefault()
   }
 })
 
@@ -232,4 +268,15 @@ ipcMain.handle('discord:test-llm-connection', async (_, settings) => {
       error: error.message || 'Connection failed'
     }
   }
+})
+
+// Handle minimize to tray
+ipcMain.on('minimize-to-tray', () => {
+  mainWindow.hide()
+})
+
+// Add handler for actual window closing
+ipcMain.on('close-window', () => {
+  app.isQuitting = true
+  app.quit()
 })

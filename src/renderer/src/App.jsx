@@ -21,6 +21,13 @@ const MoonIcon = () => (
   </svg>
 )
 
+// Minimize icon for minimize button
+const MinimizeIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+    <path fillRule="evenodd" d="M4 12a1 1 0 011-1h14a1 1 0 110 2H5a1 1 0 01-1-1z" clipRule="evenodd" />
+  </svg>
+)
+
 // Settings icon for settings button
 const SettingsIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
@@ -173,7 +180,6 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
   const [minLengthForSummary, setMinLengthForSummary] = useState(settings.minLengthForSummary || 100)
   const [model, setModel] = useState(settings.model || 'gpt-4o-mini')
   const [startWithWindows, setStartWithWindows] = useState(false)
-  
   // Update state when settings prop changes
   useEffect(() => {
     if (settings) {
@@ -185,6 +191,7 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
       setSummaryDetectionMode(settings.summaryDetectionMode || 'length')
       setMinLengthForSummary(settings.minLengthForSummary || 100)
       setModel(settings.model || 'gpt-4o-mini')
+      setMinimizeToTray(settings.minimizeToTray || false)
     }
   }, [settings])
 
@@ -245,7 +252,8 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
       enableSummarization,
       summaryDetectionMode,
       minLengthForSummary,
-      model
+      model,
+      minimizeToTray
     })
 
     setShowValidation(false)
@@ -381,6 +389,20 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
                   Important: Make sure to add <code>http://localhost:5173</code> as a redirect URI in your Discord
                   application OAuth2 settings.
                 </p>
+              </div>
+              <div className="form-group">
+                <label htmlFor="minimizeToTray" className="toggle-label">
+                  <input
+                    type="checkbox"
+                    id="minimizeToTray"
+                    checked={minimizeToTray}
+                    onChange={(e) => setMinimizeToTray(e.target.checked)}
+                  />
+                  <span className="toggle-text">Minimize to system tray instead of closing</span>
+                </label>
+                <div className="form-help">
+                  <p>When enabled, clicking the close button will minimize the app to the system tray</p>
+                </div>
               </div>
             </>
           )}
@@ -571,7 +593,8 @@ SettingsModal.propTypes = {
     enableSummarization: PropTypes.bool,
     summaryDetectionMode: PropTypes.string,
     minLengthForSummary: PropTypes.number,
-    model: PropTypes.string
+    model: PropTypes.string,
+    minimizeToTray: PropTypes.bool
   }).isRequired,
   onSave: PropTypes.func.isRequired
 }
@@ -752,7 +775,8 @@ function App() {
     enableSummarization: false,
     summaryDetectionMode: 'length',
     minLengthForSummary: 100,
-    model: 'gpt-4o-mini'
+    model: 'gpt-4o-mini',
+    minimizeToTray: false
   })
   const [theme, setTheme] = useState(() => {
     // Get saved theme or default to system preference
@@ -860,7 +884,8 @@ function App() {
         enableSummarization: newSettings.enableSummarization,
         summaryDetectionMode: newSettings.summaryDetectionMode,
         minLengthForSummary: newSettings.minLengthForSummary,
-        model: newSettings.model
+        model: newSettings.model,
+        minimizeToTray: newSettings.minimizeToTray
       }
 
       await window.api.discord.updateSettings(trimmedSettings)
@@ -998,6 +1023,14 @@ function App() {
     const allDMs = displayedNotifications.every(n => n.serverName === 'Direct Message');
     setIsDMView(allDMs);
   }, [displayedNotifications]);
+
+  const handleClose = () => {
+    if (settings.minimizeToTray) {
+      window.electron.ipcRenderer.send('minimize-to-tray')
+    } else {
+      window.electron.ipcRenderer.send('close-window')
+    }
+  }
 
   return (
     <div className="container">

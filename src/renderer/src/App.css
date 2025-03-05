@@ -913,4 +913,27 @@ h1 {
 
 .discord-timestamp:hover {
   text-decoration: underline;
+=======
+.minimize-button {
+  width: 32px;
+  height: 32px;
+  padding: 4px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-color);
+  border-radius: 6px;
+  margin-right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.minimize-button:hover {
+  background-color: var(--hover-color);
+}
+
+.minimize-button svg {
+  width: 20px;
+  height: 20px;
 }
