@@ -87,6 +87,36 @@ app.on('window-all-closed', () => {
 })
 
 /**
+ * Auto-start functionality for Windows
+ */
+function setAutoLaunch(enable) {
+  if (process.platform !== 'win32') return false;
+  
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: enable,
+      path: process.execPath
+    });
+    return true;
+  } catch (error) {
+    console.error('Failed to set auto-launch setting:', error);
+    return false;
+  }
+}
+
+function getAutoLaunchEnabled() {
+  if (process.platform !== 'win32') return false;
+  
+  try {
+    const settings = app.getLoginItemSettings();
+    return settings.openAtLogin;
+  } catch (error) {
+    console.error('Failed to get auto-launch setting:', error);
+    return false;
+  }
+}
+
+/**
  * IPC Handlers for renderer communication
  */
 
@@ -117,6 +147,15 @@ ipcMain.handle('discord:create-test-notification', () => {
   createTestNotification(mainWindow)
   return { success: true }
 })
+
+// Handle auto-launch settings
+ipcMain.handle('app:get-auto-launch', () => {
+  return getAutoLaunchEnabled();
+});
+
+ipcMain.handle('app:set-auto-launch', (_, enable) => {
+  return setAutoLaunch(enable);
+});
 
 // Handle LLM connection testing
 ipcMain.handle('discord:test-llm-connection', async (_, settings) => {

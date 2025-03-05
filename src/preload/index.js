@@ -33,6 +33,12 @@ const api = {
     createTestNotification: () => ipcRenderer.invoke('discord:create-test-notification'),
     // Method to test LLM connection before saving settings
     testLlmConnection: (settings) => ipcRenderer.invoke('discord:test-llm-connection', settings)
+  },
+  // App-related methods
+  app: {
+    // Methods for auto-launch feature
+    getAutoLaunchEnabled: () => ipcRenderer.invoke('app:get-auto-launch'),
+    setAutoLaunchEnabled: (enable) => ipcRenderer.invoke('app:set-auto-launch', enable)
   }
 }
 

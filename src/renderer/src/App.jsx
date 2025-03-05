@@ -172,6 +172,8 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
   const [summaryDetectionMode, setSummaryDetectionMode] = useState(settings.summaryDetectionMode || 'length')
   const [minLengthForSummary, setMinLengthForSummary] = useState(settings.minLengthForSummary || 100)
   const [model, setModel] = useState(settings.model || 'gpt-4o-mini')
+  const [startWithWindows, setStartWithWindows] = useState(false)
+  
   // Update state when settings prop changes
   useEffect(() => {
     if (settings) {
@@ -186,6 +188,22 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
     }
   }, [settings])
 
+  // Check current auto-launch setting when component mounts
+  useEffect(() => {
+    const checkAutoLaunch = async () => {
+      try {
+        const enabled = await window.api.app.getAutoLaunchEnabled();
+        setStartWithWindows(enabled);
+      } catch (error) {
+        console.error('Failed to get auto-launch status:', error);
+      }
+    };
+    
+    if (isOpen) {
+      checkAutoLaunch();
+    }
+  }, [isOpen]);
+
   // Function to check if the endpoint appears to be local/self-hosted
   const isLocalEndpoint = (endpoint) => {
     const url = (endpoint || '').toLowerCase()
@@ -195,7 +213,7 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
            url.includes('.local')
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     // Check if Discord fields are empty when on Discord tab
     if (currentTab === 'discord' && (!clientId.trim() || !clientSecret.trim())) {
       setShowValidation(true)
@@ -212,6 +230,13 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
       // API key is now optional for all endpoints
     }
 
+    // Update auto-launch setting
+    try {
+      await window.api.app.setAutoLaunchEnabled(startWithWindows);
+    } catch (error) {
+      console.error('Failed to set auto-launch setting:', error);
+    }
+
     onSave({
       clientId,
       clientSecret,
@@ -226,6 +251,11 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
     setShowValidation(false)
     onClose()
   }
+
+  // Toggle auto-launch setting
+  const handleAutoLaunchToggle = (e) => {
+    setStartWithWindows(e.target.checked);
+  };
 
   // Function to test the LLM connection
   const testConnection = async () => {
@@ -291,6 +321,12 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
             onClick={() => setCurrentTab('ai')}
           >
             AI Summarization
+          </button>
+          <button
+            className={`modal-tab ${currentTab === 'app' ? 'active' : ''}`}
+            onClick={() => setCurrentTab('app')}
+          >
+            App Settings
           </button>
         </div>
         <div className="modal-body">
@@ -487,6 +523,25 @@ const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
                   <p>Default: <code>gpt-4o-mini</code></p>
                   <p>Common models: gpt-4o, gpt-3.5-turbo, gpt-4, llama3, claude-3-haiku</p>
                   <p>For local LLMs like Ollama, use the model name as configured in your server</p>
+                </div>
+              </div>
+            </>
+          )}
+          
+          {currentTab === 'app' && (
+            <>
+              <div className="form-group">
+                <label htmlFor="startWithWindows" className="toggle-label">
+                  <input
+                    type="checkbox"
+                    id="startWithWindows"
+                    checked={startWithWindows}
+                    onChange={handleAutoLaunchToggle}
+                  />
+                  <span className="toggle-text">Start with Windows</span>
+                </label>
+                <div className="form-help">
+                  <p>When enabled, Discord Feed will automatically start when you log in to Windows</p>
                 </div>
               </div>
             </>
