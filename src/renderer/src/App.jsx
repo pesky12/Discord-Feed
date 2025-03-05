@@ -531,7 +531,7 @@ function App() {
         </div>
       )}
 
-      {isConnecting && (
+      {isConnecting && !localStorage.getItem('autoReconnect') && (
         <div className="empty-state">
           <p>Connecting to Discord...</p>
           <p className="empty-info">You may need to authorize this application in Discord</p>
