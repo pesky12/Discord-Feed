@@ -1,7 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain, globalShortcut } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import icon from '../../resources/icon.png?asset'
+import icon from '../../resources/Icon.png?asset'
 import { initDiscordRpc, createTestNotification } from './discordRpcService'
 import { getOpenAIService } from './openAiService'
 
@@ -21,6 +21,7 @@ function createWindow() {
     height: 670,
     show: false,
     autoHideMenuBar: true,
+    icon: icon,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -53,7 +54,7 @@ function createWindow() {
 // Initialize app when ready
 app.whenReady().then(() => {
   // Set app metadata for Windows
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('com.discord.notificationfeed')
 
   // Enable shortcuts in new windows
   app.on('browser-window-created', (_, window) => {
