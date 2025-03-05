@@ -1,6 +1,11 @@
 import { useState } from 'react'
 
+/**
+ * Displays version information for the app's core dependencies
+ * Shows Electron, Chromium, and Node.js versions in a footer bar
+ */
 function Versions() {
+  // Get version info from electron process
   const [versions] = useState(window.electron.process.versions)
 
   return (

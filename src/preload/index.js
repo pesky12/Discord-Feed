@@ -21,7 +21,13 @@ const api = {
       const listener = (_, isConnected) => callback(isConnected)
       ipcRenderer.on('discord:connection-change', listener)
       return () => ipcRenderer.removeListener('discord:connection-change', listener)
-    }
+    },
+    // Method for manual summarization of message content
+    summarizeMessage: (content) => ipcRenderer.invoke('summarize-message', content),
+    // Method to generate test notifications
+    createTestNotification: () => ipcRenderer.invoke('discord:create-test-notification'),
+    // Method to test LLM connection before saving settings
+    testLlmConnection: (settings) => ipcRenderer.invoke('discord:test-llm-connection', settings)
   }
 }
 

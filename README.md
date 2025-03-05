@@ -33,10 +33,20 @@ Available installers:
 ## Setup
 
 1. Make sure Discord desktop app is running
-2. On first launch, open Settings by clicking the gear icon
-3. Enter your Discord Client ID and Secret
-4. Click Connect to authorize with Discord
+2. Create a new application in the [Discord Developer Portal](https://discord.com/developers/applications)
+3. In your application settings:
+   - Go to "OAuth2" section
+   - Add `http://localhost:5173` as a redirect URI
+   - Save changes
+   - Copy your Client ID and Client Secret
+4. On first launch of Discord Notification Feed:
+   - Open Settings by clicking the gear icon
+   - Enter your Discord Client ID and Secret from step 3
+   - Click Connect to authorize with Discord
 5. Start receiving notifications in a clean feed!
+
+### Important Note
+Make sure to add `http://localhost:5173` as a redirect URI in your Discord application settings. The app will not work without this configuration.
 
 ## Development
 

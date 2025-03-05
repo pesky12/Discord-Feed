@@ -1,3 +1,10 @@
+# GitHub Actions workflow for building and releasing the Discord Notification Feed
+# Triggers on:
+# - Push to main/master
+# - Tags with v prefix (releases)
+# - Pull requests to main/master
+# - Manual workflow dispatch
+
 name: Build Electron App
 
 on:
@@ -19,25 +26,31 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     
+    # Build matrix for cross-platform compilation
     strategy:
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]
         
     steps:
+    # Checkout repository
     - uses: actions/checkout@v3
     
+    # Setup Node.js environment with caching
     - name: Setup Node.js
       uses: actions/setup-node@v3
       with:
         node-version: '18'
         cache: 'npm'
         
+    # Install project dependencies
     - name: Install dependencies
       run: npm ci
       
+    # Build application
     - name: Build
       run: npm run build
       
+    # Package app and publish if this is a tag
     - name: Package and Publish Electron App
       env:
         GH_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -49,6 +62,7 @@ jobs:
         fi
       shell: bash
       
+    # Upload build artifacts for non-release builds
     - name: Upload artifacts
       if: ${{ !startsWith(github.ref, 'refs/tags/') }}
       uses: actions/upload-artifact@v3

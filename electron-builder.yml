@@ -1,26 +1,39 @@
+# Application metadata and build configuration
 appId: com.discord.notificationfeed
 productName: Discord Notification Feed
+
+# Build resource directories
 directories:
   buildResources: build
+
+# Files to include/exclude in the build
 files:
-  - '!**/.vscode/*'
-  - '!src/*'
-  - '!electron.vite.config.{js,ts,mjs,cjs}'
-  - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
-  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
+  - '!**/.vscode/*'           # Exclude VSCode settings
+  - '!src/*'                  # Exclude source files
+  - '!electron.vite.config.{js,ts,mjs,cjs}'  # Exclude build configs
+  - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'  # Exclude dev files
+  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'   # Exclude environment and lock files
+
+# Files to unpack from asar archive for direct access
 asarUnpack:
   - resources/**
+
+# Windows-specific build configuration
 win:
   executableName: Discord-Notification-Feed
   sign: false
   signAndEditExecutable: false
+
+# Windows installer configuration
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
-  oneClick: true
-  perMachine: false
+  oneClick: true      # One-click installation
+  perMachine: false   # Per-user installation
+
+# macOS-specific build configuration
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
@@ -28,19 +41,29 @@ mac:
     - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
-  notarize: false
+  notarize: false    # Disable notarization for development
+
+# macOS DMG configuration
 dmg:
   artifactName: ${name}-${version}.${ext}
+
+# Linux-specific build configuration
 linux:
   target:
-    - AppImage
-    - snap
-    - deb
+    - AppImage    # Portable format
+    - snap       # Snap package
+    - deb        # Debian package
   maintainer: electronjs.org
   category: Utility
+
+# Linux AppImage configuration
 appImage:
   artifactName: ${name}-${version}.${ext}
+
+# Build optimizations
 npmRebuild: false
+
+# Auto-update configuration
 publish:
   provider: generic
   url: https://example.com/auto-updates
