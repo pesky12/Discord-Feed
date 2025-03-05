@@ -3,8 +3,17 @@ name: Build Electron App
 on:
   push:
     branches: [ main, master ]
+    tags:
+      - 'v*'
   pull_request:
     branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      forceBuild:
+        description: 'Force build regardless of changes'
+        required: false
+        default: 'false'
+        type: boolean
 
 jobs:
   build:
@@ -29,10 +38,19 @@ jobs:
     - name: Build
       run: npm run build
       
-    - name: Package Electron App
-      run: npm run package
+    - name: Package and Publish Electron App
+      env:
+        GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      run: |
+        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          npm run publish
+        else
+          npm run package
+        fi
+      shell: bash
       
     - name: Upload artifacts
+      if: ${{ !startsWith(github.ref, 'refs/tags/') }}
       uses: actions/upload-artifact@v3
       with:
         name: ${{ runner.os }}-build
