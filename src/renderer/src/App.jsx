@@ -88,6 +88,11 @@ function App() {
     return matchesCategory && matchesImportance;
   });
 
+  // State for reconnection attempts
+  const [reconnectAttempts, setReconnectAttempts] = useState(0)
+  const maxReconnectAttempts = 5
+  const reconnectDelay = 5000 // 5 seconds between attempts
+
   // Apply theme class to body element
   useEffect(() => {
     document.body.className = `theme-${theme}`
@@ -244,12 +249,13 @@ function App() {
     }
   }, [])
 
+  // Handle connect with automatic reconnection
   const handleConnect = async () => {
     if (isConnecting || isConnected) return
 
     // Check if clientId and clientSecret are set and not just whitespace
     if (!settings.clientId?.trim() || !settings.clientSecret?.trim()) {
-      setError('Please enter your Discord client ID and secret in settings.')
+      setError('Please enter your Discord client ID and secret in settings first.')
       return
     }
 
@@ -257,12 +263,17 @@ function App() {
     setError(null)
 
     try {
-      console.log('Attempting to connect to Discord...')
+      console.log('Connecting to Discord...')
       const result = await window.api.discord.connect()
       if (!result.success) {
         throw new Error(result.error || 'Failed to connect to Discord')
       }
-      console.log('Successfully connected to Discord')
+      console.log('Connected to Discord successfully!')
+      
+      // Remember this for next time
+      localStorage.setItem('autoReconnect', 'true')
+      // Reset reconnect attempts on successful connection
+      setReconnectAttempts(0)
     } catch (err) {
       console.error('Failed to connect to Discord', err)
       setError(err.message || 'Failed to connect to Discord')
@@ -270,18 +281,116 @@ function App() {
     }
   }
 
+  // Try to reconnect with exponential backoff
+  const attemptReconnect = async () => {
+    if (isConnecting || isConnected || reconnectAttempts >= maxReconnectAttempts) return
+
+    setIsConnecting(true)
+    setError(null)
+    setReconnectAttempts(prev => prev + 1)
+
+    try {
+      console.log(`Trying to reconnect (attempt ${reconnectAttempts + 1} of ${maxReconnectAttempts})...`)
+      const result = await window.api.discord.connect()
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to reconnect to Discord')
+      }
+      
+      console.log('Woohoo! Reconnected to Discord successfully')
+      localStorage.setItem('autoReconnect', 'true')
+      setReconnectAttempts(0)
+    } catch (err) {
+      console.error('Failed to reconnect to Discord', err)
+      setError(`Couldn't reconnect (attempt ${reconnectAttempts + 1}). Will try again in ${reconnectDelay/1000} seconds...`)
+      setIsConnecting(false)
+
+      // Schedule next retry with increasing delay
+      if (reconnectAttempts < maxReconnectAttempts) {
+        setTimeout(() => {
+          attemptReconnect()
+        }, reconnectDelay * (reconnectAttempts + 1))
+      } else {
+        setError("I've tried several times but couldn't reconnect. Please try connecting manually.")
+        // Clear auto reconnect flag after max attempts
+        localStorage.removeItem('autoReconnect')
+      }
+    }
+  }
+
+  // Handle disconnect with cleanup for auto-reconnect
   const handleDisconnect = async () => {
     try {
       await window.api.discord.disconnect()
+      // Clear auto reconnect flag when manually disconnecting
+      localStorage.removeItem('autoReconnect')
       // Clear notifications when disconnecting
       setDisplayedNotifications([])
       setTotalNotifications(0)
       setPage(1)
       setHasMore(false)
+      // Reset reconnect attempts
+      setReconnectAttempts(0)
     } catch (err) {
       console.error('Error disconnecting from Discord', err)
     }
   }
+
+  // Add auto-reconnect effect
+  useEffect(() => {
+    const checkAndReconnect = async () => {
+      // Only try reconnecting if we were connected before and aren't currently connecting
+      if (!isConnected && !isConnecting && localStorage.getItem('autoReconnect') === 'true') {
+        // Check if we have what we need to connect
+        if (settings.clientId?.trim() && settings.clientSecret?.trim()) {
+          console.log('Looks like we were connected before - trying to reconnect to Discord')
+          attemptReconnect()
+        }
+      }
+    }
+
+    // Check for auto-reconnect on component mount
+    checkAndReconnect()
+
+    // Listen for app visibility changes to attempt reconnection when app regains focus
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !isConnected && !isConnecting) {
+        checkAndReconnect()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    // Check if this is a startup scenario by detecting if this is the first load
+    const isStartup = sessionStorage.getItem('appInitialized') !== 'true'
+    sessionStorage.setItem('appInitialized', 'true')
+
+    // On startup, check if we need to use the more aggressive retry strategy
+    if (isStartup && localStorage.getItem('autoReconnect') === 'true') {
+      // More aggressive startup retry schedule (shorter initial delays)
+      const startupRetrySchedule = [1000, 2000, 5000, 10000, 15000]
+      
+      let startupAttempt = 0
+      const startupReconnect = () => {
+        if (!isConnected && startupAttempt < startupRetrySchedule.length) {
+          setTimeout(() => {
+            // Only try if we're still not connected
+            if (!isConnected && !isConnecting) {
+              console.log(`Startup attempt ${startupAttempt + 1} - Discord might still be launching...`)
+              attemptReconnect()
+            }
+            startupAttempt++
+            startupReconnect()
+          }, startupRetrySchedule[startupAttempt])
+        }
+      }
+      
+      startupReconnect()
+    }
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [settings.clientId, settings.clientSecret, isConnected, isConnecting])
 
   // Add keydown event listener for the test notification shortcut for better accessibility
   useEffect(() => {
