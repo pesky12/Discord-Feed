@@ -45,7 +45,7 @@ body {
 }
 
 .container {
-  max-width: 800px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 20px;
 }
@@ -61,6 +61,15 @@ body {
   position: sticky;
   top: 0;
   z-index: 10;
+  position: sticky;
+  top: 0;
+  background: var(--color-bg);
+  z-index: 10;
+  padding: 16px 0;
+  margin: -20px -20px 20px -20px;
+  padding: 20px;
+  border-bottom: 1px solid var(--color-border);
+  backdrop-filter: blur(10px);
 }
 
 h1 {
@@ -76,6 +85,8 @@ h1 {
   font-weight: 500;
   cursor: pointer;
   transition: background-color 0.2s;
+  position: relative;
+  overflow: hidden;
 }
 
 .connect-btn {
@@ -85,11 +96,18 @@ h1 {
 
 .connect-btn:hover {
   background-color: #4752c4;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.connect-btn:active {
+  transform: translateY(0);
 }
 
 .connect-btn.connecting {
   background-color: #7c86f3;
   cursor: not-allowed;
+  opacity: 0.8;
 }
 
 .disconnect-btn {
@@ -99,6 +117,12 @@ h1 {
 
 .disconnect-btn:hover {
   background-color: #c53a3d;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.disconnect-btn:active {
+  transform: translateY(0);
 }
 
 .error-message {
@@ -107,23 +131,60 @@ h1 {
   background-color: var(--error-bg);
   border-left: 4px solid var(--error-color);
   border-radius: 4px;
+  background: var(--color-error-bg);
+  border-left: 4px solid var(--color-error);
+  padding: 16px;
+  margin: 20px;
+  border-radius: 4px;
 }
 
 .error-title {
   font-weight: bold;
   margin-bottom: 8px;
+  color: var(--color-error);
 }
 
 .error-info {
   font-size: 0.875rem;
   margin-top: 8px;
   color: var(--secondary-text);
+  font-size: 0.9em;
+  opacity: 0.8;
+  margin-top: 8px;
 }
 
 .empty-state {
   padding: 64px 16px;
   text-align: center;
   color: var(--secondary-text);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  background: var(--color-bg-secondary);
+  border-radius: 12px;
+  margin: 20px;
+  min-height: 200px;
+}
+
+.empty-state-icon {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 20px;
+  color: var(--color-text-secondary);
+}
+
+.empty-state p {
+  margin: 8px 0;
+  color: var(--color-text);
+  font-size: 1.1em;
+}
+
+.empty-state .empty-info {
+  color: var(--color-text-secondary);
+  font-size: 0.9em;
 }
 
 .empty-info {
@@ -180,10 +241,18 @@ h1 {
   font-weight: 500;
   cursor: pointer;
   transition: background-color 0.2s;
+  position: relative;
+  overflow: hidden;
 }
 
 .load-more-button:hover {
   background-color: var(--border-color);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.load-more-button:active {
+  transform: translateY(0);
 }
 
 /* Responsive adjustments for the notification list */
@@ -601,6 +670,11 @@ h1 {
   color: var(--secondary-text);
   font-size: 0.9rem;
   border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+  color: var(--color-text-secondary);
 }
 
 /* AI Summary Styles */
@@ -778,6 +852,9 @@ h1 {
   display: flex;
   gap: 8px;
   margin: 0 16px;
+  display: flex;
+  gap: 10px;
+  margin: 10px 0;
 }
 
 .filter-select {
@@ -788,12 +865,23 @@ h1 {
   color: var(--text-color);
   font-size: 0.9rem;
   cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 0.9em;
+  transition: border-color 0.2s ease;
 }
 
 .filter-select:focus {
   outline: none;
   border-color: var(--primary-color);
   box-shadow: 0 0 0 2px rgba(88, 101, 242, 0.2);
+}
+
+.filter-select:hover {
+  border-color: var(--color-accent);
 }
 
 /* Message categories and importance indicators */
@@ -913,7 +1001,114 @@ h1 {
 
 .discord-timestamp:hover {
   text-decoration: underline;
-=======
+}
+
+/* Loading Spinner */
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin: 20px auto;
+}
+
+.loading-spinner-circle {
+  stroke: var(--color-accent);
+  stroke-linecap: round;
+  animation: dash 1.5s ease-in-out infinite;
+}
+
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes dash {
+  0% {
+    stroke-dasharray: 1, 150;
+    stroke-dashoffset: 0;
+  }
+  50% {
+    stroke-dasharray: 90, 150;
+    stroke-dashoffset: -35;
+  }
+  100% {
+    stroke-dasharray: 90, 150;
+    stroke-dashoffset: -124;
+  }
+}
+
+/* Keyboard Shortcut Style */
+kbd {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.9em;
+  font-family: monospace;
+}
+
+/* Enhanced Button States */
+.connect-btn, .disconnect-btn, .load-more-button {
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.connect-btn:hover, .disconnect-btn:hover, .load-more-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.connect-btn:active, .disconnect-btn:active, .load-more-button:active {
+  transform: translateY(0);
+}
+
+.connect-btn.connecting {
+  opacity: 0.8;
+  cursor: not-allowed;
+}
+
+/* Error Message */
+.error-message {
+  background: var(--color-error-bg);
+  border-left: 4px solid var(--color-error);
+  padding: 16px;
+  margin: 20px;
+  border-radius: 4px;
+}
+
+.error-message .error-title {
+  color: var(--color-error);
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.error-message .error-info {
+  font-size: 0.9em;
+  opacity: 0.8;
+  margin-top: 8px;
+}
+
+/* Container Improvements */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  background: var(--color-bg);
+  z-index: 10;
+  padding: 16px 0;
+  margin: -20px -20px 20px -20px;
+  padding: 20px;
+  border-bottom: 1px solid var(--color-border);
+  backdrop-filter: blur(10px);
+}
+
 .minimize-button {
   width: 32px;
   height: 32px;
