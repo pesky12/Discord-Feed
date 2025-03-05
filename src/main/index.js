@@ -1,7 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain, globalShortcut, Tray, Menu } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import icon from '../../resources/icon.png?asset'
+import icon from '../../resources/Icon.png?asset'
 import { initDiscordRpc, createTestNotification } from './discordRpcService'
 import { getOpenAIService } from './openAiService'
 
@@ -22,6 +22,7 @@ function createWindow() {
     height: 670,
     show: false,
     autoHideMenuBar: true,
+    icon: icon,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -89,7 +90,7 @@ function createWindow() {
 // Initialize app when ready
 app.whenReady().then(() => {
   // Set app metadata for Windows
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('com.discord.notificationfeed')
 
   // Enable shortcuts in new windows
   app.on('browser-window-created', (_, window) => {
@@ -123,6 +124,36 @@ app.on('window-all-closed', (event) => {
 })
 
 /**
+ * Auto-start functionality for Windows
+ */
+function setAutoLaunch(enable) {
+  if (process.platform !== 'win32') return false;
+  
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: enable,
+      path: process.execPath
+    });
+    return true;
+  } catch (error) {
+    console.error('Failed to set auto-launch setting:', error);
+    return false;
+  }
+}
+
+function getAutoLaunchEnabled() {
+  if (process.platform !== 'win32') return false;
+  
+  try {
+    const settings = app.getLoginItemSettings();
+    return settings.openAtLogin;
+  } catch (error) {
+    console.error('Failed to get auto-launch setting:', error);
+    return false;
+  }
+}
+
+/**
  * IPC Handlers for renderer communication
  */
 
@@ -153,6 +184,15 @@ ipcMain.handle('discord:create-test-notification', () => {
   createTestNotification(mainWindow)
   return { success: true }
 })
+
+// Handle auto-launch settings
+ipcMain.handle('app:get-auto-launch', () => {
+  return getAutoLaunchEnabled();
+});
+
+ipcMain.handle('app:set-auto-launch', (_, enable) => {
+  return setAutoLaunch(enable);
+});
 
 // Handle LLM connection testing
 ipcMain.handle('discord:test-llm-connection', async (_, settings) => {

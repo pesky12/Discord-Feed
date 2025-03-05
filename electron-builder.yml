@@ -4,7 +4,7 @@ productName: Discord Notification Feed
 
 # Build resource directories
 directories:
-  buildResources: build
+  buildResources: resources
 
 # Files to include/exclude in the build
 files:
@@ -23,6 +23,7 @@ win:
   executableName: Discord-Notification-Feed
   sign: false
   signAndEditExecutable: false
+  icon: resources/Icon.png
 
 # Windows installer configuration
 nsis:
@@ -42,6 +43,7 @@ mac:
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
   notarize: false    # Disable notarization for development
+  icon: resources/Icon.png
 
 # macOS DMG configuration
 dmg:
@@ -55,6 +57,7 @@ linux:
     - deb        # Debian package
   maintainer: electronjs.org
   category: Utility
+  icon: resources/Icon.png
 
 # Linux AppImage configuration
 appImage:

@@ -7,6 +7,29 @@ import path from 'path'
 const DEFAULT_MODEL = 'gpt-4o-mini'
 
 /**
+ * Converts Discord timestamp format <t:timestamp:format> to human-readable text
+ * @param {string} text - Text that may contain Discord timestamp markup
+ * @returns {string} Text with Discord timestamps converted to human-readable format
+ */
+function convertDiscordTimestampsToText(text) {
+  if (!text) return text;
+  
+  // Discord timestamp format: <t:1234567890:F> (or t, R, D, etc.)
+  // Regex to match Discord timestamp format
+  const discordTimestampRegex = /<t:(\d+):[A-Za-z]>/g;
+  
+  return text.replace(discordTimestampRegex, (match, timestamp) => {
+    try {
+      const date = new Date(parseInt(timestamp) * 1000);
+      return date.toLocaleString();
+    } catch (e) {
+      console.error('Error converting Discord timestamp:', e);
+      return match; // Return original if conversion fails
+    }
+  });
+}
+
+/**
  * Service for handling AI-powered message processing using OpenAI or compatible APIs.
  * Supports summarization, categorization, and smart detection of message importance.
  */
@@ -85,8 +108,11 @@ export class OpenAIService {
     try {
       const endpoint = `${this.apiEndpoint.replace(/\/+$/, '')}/chat/completions`;
 
+      // Convert any Discord timestamps to human-readable text
+      const humanReadableMessage = convertDiscordTimestampsToText(messageContent);
+
       const prompt = `Analyze the following Discord message and determine if it needs summarization.
-Message: "${messageContent}"
+Message: "${humanReadableMessage}"
 
 A message needs summarization if:
 1. It's information-dense with multiple points
@@ -165,6 +191,9 @@ Respond with ONLY "YES" or "NO" - should this message be summarized?`;
     try {
       const endpoint = `${this.apiEndpoint.replace(/\/+$/, '')}/chat/completions`;
 
+      // Convert any Discord timestamps to human-readable text
+      const humanReadableMessage = convertDiscordTimestampsToText(messageContent);
+
       let systemPrompt = `You are a helpful assistant that summarizes Discord messages in a brief and concise way.
 You understand conversation context and Discord's communication style.
 Consider the following context when analyzing messages:`;
@@ -176,7 +205,7 @@ Consider the following context when analyzing messages:`;
       }
       if (context.isDM) systemPrompt += `\n- This is a direct message conversation`;
 
-      const prompt = `Please provide a brief, concise summary (1-2 sentences) of the following Discord message${context.isDM ? ' from this DM conversation' : ''}: "${messageContent}"`;
+      const prompt = `Please provide a brief, concise summary (1-2 sentences) of the following Discord message${context.isDM ? ' from this DM conversation' : ''}: "${humanReadableMessage}"`;
 
       const headers = {
         'Content-Type': 'application/json'
@@ -236,9 +265,12 @@ Consider the following context when analyzing messages:`;
     try {
       const endpoint = `${this.apiEndpoint.replace(/\/+$/, '')}/chat/completions`;
 
+      // Convert any Discord timestamps to human-readable text
+      const humanReadableMessage = convertDiscordTimestampsToText(messageContent);
+
       // Define the analysis prompt with clear criteria
       const prompt = `Analyze the following Discord message and categorize it:
-Message: "${messageContent}"
+Message: "${humanReadableMessage}"
 
 Respond in JSON format with two fields:
 1. "category" - One of: "EVENT" (meetings, planning, scheduling), "QUESTION" (help requests, inquiries), "ANNOUNCEMENT" (important updates), or "CASUAL" (general chat, social)
@@ -295,6 +327,208 @@ Base the importance on:
       return null;
     } catch (error) {
       console.error('Error in categorizeMessage:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Validates extracted event details to ensure they are complete and make sense
+   * @param {Object} eventDetails - The event details to validate
+   * @returns {boolean} True if the event details are valid
+   */
+  validateEventDetails(eventDetails) {
+    if (!eventDetails || !eventDetails.hasEvent) return false;
+    
+    try {
+      // Check required fields
+      if (!eventDetails.title || !eventDetails.date || !eventDetails.time) {
+        console.log('Missing required fields:', { eventDetails });
+        return false;
+      }
+
+      // Clean up date format
+      const dateMatch = eventDetails.date.match(/^\d{4}-\d{2}-\d{2}$/);
+      if (!dateMatch) {
+        console.log('Invalid date format:', eventDetails.date);
+        return false;
+      }
+
+      // Clean up time format and allow more variations
+      let time = eventDetails.time;
+      // Remove any leading/trailing whitespace
+      time = time.trim();
+      // Convert 12-hour format to 24-hour if needed
+      if (time.match(/^(1[0-2]|0?[1-9]):[0-5][0-9](:[0-5][0-9])?\s*[AaPp][Mm]$/)) {
+        const [_, hours, minutes, __, meridiem] = time.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])$/);
+        const hr = parseInt(hours, 10) % 12 + (meridiem.toLowerCase() === 'pm' ? 12 : 0);
+        time = `${hr.toString().padStart(2, '0')}:${minutes}`;
+      }
+      // Validate final time format
+      if (!time.match(/^([01]\d|2[0-3]):([0-5]\d)$/)) {
+        console.log('Invalid time format after conversion:', time);
+        return false;
+      }
+      eventDetails.time = time;
+
+      // Validate the combined date and time is not in the past
+      const eventDate = new Date(`${eventDetails.date}T${eventDetails.time}`);
+      if (isNaN(eventDate.getTime())) {
+        console.log('Invalid date/time combination:', eventDetails.date, eventDetails.time);
+        return false;
+      }
+
+      // Allow events starting within the last hour to account for slight time differences
+      const now = new Date();
+      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+      if (eventDate < oneHourAgo) {
+        console.log('Event is in the past:', eventDate);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error validating event details:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Extracts event details from a message if it contains event information
+   * @param {string} messageContent - The message to analyze
+   * @returns {Promise<Object|null>} Event details or null if no event found
+   */
+  async extractEventDetails(messageContent) {
+    if (!this.isEnabled() || !messageContent) {
+      return null;
+    }
+
+    try {
+      const endpoint = `${this.apiEndpoint.replace(/\/+$/, '')}/chat/completions`;
+      const now = new Date();
+      const today = now.toISOString().split('T')[0];
+      const currentTime = now.toTimeString().split(' ')[0];
+
+      // Convert any Discord timestamps to human-readable text first
+      const humanReadableMessage = convertDiscordTimestampsToText(messageContent);
+
+      // Log the conversion for debugging
+      console.log('Original message:', messageContent);
+      console.log('Converted message:', humanReadableMessage);
+
+      const prompt = `You are an assistant that extracts event details from Discord messages.
+Current date: ${today}
+Current time: ${currentTime}
+
+Analyze this Discord message for event details:
+"${humanReadableMessage}"
+
+Instructions:
+1. Look for mentions of:
+   - Specific dates (e.g., "March 15th", "next Tuesday", "tomorrow")
+   - Specific times (e.g., "2pm", "14:00", "3:30 EST")
+   - Locations (physical or virtual)
+   - Meeting/event purposes
+
+2. Convert relative dates to YYYY-MM-DD format:
+   - "tomorrow" → "${new Date(now.getTime() + 86400000).toISOString().split('T')[0]}"
+   - "next week" → date 7 days from now
+   - Use ${today} as reference date
+
+3. Convert times to 24-hour format (HH:MM):
+   - "2pm" → "14:00"
+   - "2:30pm" → "14:30"
+   - Use local time if no timezone specified
+
+4. Location handling:
+   - Use exact location if mentioned
+   - Use "Virtual Meeting" if mentions online/virtual
+   - Use null if no location found
+
+If you find an event with both a date and time, output this JSON:
+{
+  "hasEvent": true,
+  "title": "Clear event title",
+  "date": "YYYY-MM-DD",
+  "time": "HH:MM",
+  "location": "Location or null",
+  "description": "Event description"
+}
+
+Example inputs that should return events:
+1. "Team meeting tomorrow at 2pm" → Extract event with tomorrow's date and 14:00
+2. "Sprint review on Tuesday 15:00" → Calculate next Tuesday's date
+3. "Project deadline March 15th at 3pm EST" → Convert to YYYY-MM-DD and 15:00
+
+Output exactly "NO_EVENT" only if:
+1. No date AND time are mentioned together
+2. Time references are vague ("later", "soon")
+3. The event is clearly in the past
+
+Think step by step:
+1. Is there a time mentioned? (required)
+2. Is there a date mentioned? (required)
+3. Is there a location? (optional)
+4. What's the event about? (required for title)
+5. Are all required fields clear and specific?`;
+
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+
+      if (this.apiKey && this.apiKey.trim() !== '') {
+        headers['Authorization'] = `Bearer ${this.apiKey}`;
+      }
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: this.model,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a helpful assistant that extracts event details from messages. You are optimistic about finding events when both a date and time are mentioned.'
+            },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.3, // Increased from 0.1 to allow more flexibility
+          max_tokens: 500 // Increased to ensure full response
+        })
+      });
+
+      if (!response.ok) {
+        console.error('LLM API error when extracting event details');
+        return null;
+      }
+
+      const data = await response.json();
+      
+      // Log the LLM response for debugging
+      console.log('LLM Response:', data?.choices?.[0]?.message?.content);
+
+      if (data.choices && data.choices.length > 0 && data.choices[0].message) {
+        const result = data.choices[0].message.content.trim();
+        
+        if (result === 'NO_EVENT') {
+          return null;
+        }
+
+        try {
+          const eventDetails = JSON.parse(result);
+          if (this.validateEventDetails(eventDetails)) {
+            console.log('Valid event details extracted:', eventDetails);
+            return eventDetails;
+          } else {
+            console.log('Invalid event details:', eventDetails);
+          }
+        } catch (parseError) {
+          console.error('Failed to parse event details:', parseError);
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error in extractEventDetails:', error);
       return null;
     }
   }
