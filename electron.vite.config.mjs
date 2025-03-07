@@ -26,6 +26,15 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src')
       }
     },
-    plugins: [react()]  // Enable React support
+    plugins: [react()],  // Enable React support
+    server: {
+      // Use a unique port for development
+      port: 5174,
+      // Use a unique name for the development version
+      hmr: {
+        protocol: 'ws',
+        host: 'localhost'
+      }
+    }
   }
 })

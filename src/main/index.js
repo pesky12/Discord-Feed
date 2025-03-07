@@ -4,6 +4,28 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/Icon.png?asset'
 import { initDiscordRpc, createTestNotification } from './discordRpcService'
 import { getOpenAIService } from './openAiService'
+import path from 'path'
+import fs from 'fs'
+
+// Set up app data paths with development-specific paths
+const APP_NAME = 'discord-feed'
+const USER_DATA_PATH = app.getPath('userData')
+
+// For development builds, use a separate userData directory
+// This ensures dev builds don't overwrite or conflict with production builds
+if (is.dev) {
+  const devUserDataPath = path.join(USER_DATA_PATH, 'dev')
+  console.log(`Running in development mode, using: ${devUserDataPath}`)
+  
+  // Create the dev directory if it doesn't exist
+  if (!fs.existsSync(devUserDataPath)) {
+    fs.mkdirSync(devUserDataPath, { recursive: true })
+  }
+  
+  app.setPath('userData', devUserDataPath)
+}
+
+console.log(`App data stored at: ${app.getPath('userData')}`)
 
 /**
  * Reference to the main application window

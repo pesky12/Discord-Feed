@@ -3,6 +3,13 @@ import PropTypes from 'prop-types'
 import CalendarEventButton from './CalendarEventButton'
 import { formatTimestamp, formatMessageWithTimestamps } from '../utils/timeFormatters'
 
+// AI Star icon for processing indicator
+const AiStarIcon = () => (
+  <svg className="ai-star-icon" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 2L9.0718 8.83688L2 9.27313L7.0359 14.1631L5.90492 21L12 17.7775L18.0951 21L16.9641 14.1631L22 9.27313L14.9282 8.83688L12 2Z" />
+  </svg>
+)
+
 const NotificationItem = ({ notification }) => {
   const [avatarSrc, setAvatarSrc] = useState('https://cdn.discordapp.com/embed/avatars/0.png')
   const [summary, setSummary] = useState(notification.summary)
@@ -50,21 +57,21 @@ const NotificationItem = ({ notification }) => {
 
   const getImportanceClass = () => {
     switch (notification.importance) {
-      case 'HIGH': return 'importance-high';
-      case 'MEDIUM': return 'importance-medium';
-      case 'LOW': return 'importance-low';
-      default: return '';
+      case 'HIGH':
+        return 'importance-high'
+      case 'MEDIUM':
+        return 'importance-medium'
+      case 'LOW':
+        return 'importance-low'
+      default:
+        return ''
     }
-  };
+  }
 
   return (
     <div className={`notification-item ${getImportanceClass()}`}>
       <div className="notification-header">
-        <img
-          src={avatarSrc}
-          alt="Avatar"
-          className="avatar"
-        />
+        <img src={avatarSrc} alt="Avatar" className="avatar" />
         <div className="notification-user">
           <span className="username">{notification.author?.name || 'Discord User'}</span>
           <span className="timestamp">{formatTimestamp(notification.timestamp)}</span>
@@ -84,14 +91,14 @@ const NotificationItem = ({ notification }) => {
       <div className="notification-content">
         <div className="notification-title">{notification.title}</div>
         <p className="notification-body">
-          {typeof notification.body === 'string' && notification.body.match(/<t:\d+:[tTdDfFR]>/g) 
-            ? formatMessageWithTimestamps(notification.body) 
-            : notification.body}
+          {typeof notification.body === 'string' && notification.body.match(/<t:\d+:[tTdDfFR]>/g) ? formatMessageWithTimestamps(notification.body) : notification.body}
         </p>
 
         {summaryState === 'loading' && (
           <div className="notification-summary loading">
-            <div className="summary-title">Generating summary...</div>
+            <div className="summary-title">
+              <AiStarIcon /> Analyzing message...
+            </div>
             <div className="summary-loading-indicator">
               <div className="dot-pulse">
                 <span></span>
@@ -110,9 +117,18 @@ const NotificationItem = ({ notification }) => {
         )}
       </div>
 
+      {summaryState === 'loading' && (
+        <div className="processing-indicator">
+          <AiStarIcon />
+          <span>Processing with AI</span>
+        </div>
+      )}
+
       <div className="notification-meta">
         <div className="notification-actions">
-          {(notification.category === 'EVENT' || notification.eventStart || notification.eventName) && (
+          {(notification.category === 'EVENT' || 
+            notification.eventStart || 
+            notification.eventName) && (
             <CalendarEventButton eventData={notification} notificationId={notification.id} />
           )}
         </div>
