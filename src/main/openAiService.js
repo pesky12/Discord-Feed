@@ -370,6 +370,35 @@ Base the importance on:
       }
       eventDetails.time = time;
 
+      // If end time is provided, validate it
+      if (eventDetails.endTime) {
+        let endTime = eventDetails.endTime;
+        // Remove any leading/trailing whitespace
+        endTime = endTime.trim();
+        // Convert 12-hour format to 24-hour if needed
+        if (endTime.match(/^(1[0-2]|0?[1-9]):[0-5][0-9](:[0-5][0-9])?\s*[AaPp][Mm]$/)) {
+          const [_, hours, minutes, __, meridiem] = endTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])$/);
+          const hr = parseInt(hours, 10) % 12 + (meridiem.toLowerCase() === 'pm' ? 12 : 0);
+          endTime = `${hr.toString().padStart(2, '0')}:${minutes}`;
+        }
+        // Validate final time format
+        if (!endTime.match(/^([01]\d|2[0-3]):([0-5]\d)$/)) {
+          console.log('Invalid end time format after conversion:', endTime);
+          eventDetails.endTime = ''; // Clear invalid end time
+        } else {
+          eventDetails.endTime = endTime;
+        }
+      }
+
+      // If end date is provided, validate it
+      if (eventDetails.endDate) {
+        const endDateMatch = eventDetails.endDate.match(/^\d{4}-\d{2}-\d{2}$/);
+        if (!endDateMatch) {
+          console.log('Invalid end date format:', eventDetails.endDate);
+          eventDetails.endDate = eventDetails.date; // Default to start date if invalid
+        }
+      }
+
       // Validate the combined date and time is not in the past
       const eventDate = new Date(`${eventDetails.date}T${eventDetails.time}`);
       if (isNaN(eventDate.getTime())) {
@@ -426,6 +455,8 @@ Instructions:
 1. Look for mentions of:
    - Specific dates (e.g., "March 15th", "next Tuesday", "tomorrow")
    - Specific times (e.g., "2pm", "14:00", "3:30 EST")
+   - End times (e.g., "from 2pm to 4pm", "2-4pm", "until 3:30pm")
+   - Event durations (e.g., "2 hour meeting", "90 minute session")
    - Locations (physical or virtual)
    - Meeting/event purposes
 
@@ -439,7 +470,12 @@ Instructions:
    - "2:30pm" → "14:30"
    - Use local time if no timezone specified
 
-4. Location handling:
+4. Determine end time and date:
+   - If specific end time is mentioned (e.g., "2pm to 4pm"), extract it
+   - If duration is mentioned (e.g., "2 hour meeting"), calculate end time
+   - If neither is specified, leave end time/date empty (client will default to 1 hour later)
+
+5. Location handling:
    - Use exact location if mentioned
    - Use "Virtual Meeting" if mentions online/virtual
    - Use null if no location found
@@ -450,6 +486,8 @@ If you find an event with both a date and time, output this JSON:
   "title": "Clear event title",
   "date": "YYYY-MM-DD",
   "time": "HH:MM",
+  "endDate": "YYYY-MM-DD or empty if same as start date",
+  "endTime": "HH:MM or empty if not specified",
   "location": "Location or null",
   "description": "Event description"
 }
@@ -458,6 +496,7 @@ Example inputs that should return events:
 1. "Team meeting tomorrow at 2pm" → Extract event with tomorrow's date and 14:00
 2. "Sprint review on Tuesday 15:00" → Calculate next Tuesday's date
 3. "Project deadline March 15th at 3pm EST" → Convert to YYYY-MM-DD and 15:00
+4. "Meeting from 2pm to 4pm tomorrow" → Extract both start and end times
 
 Output exactly "NO_EVENT" only if:
 1. No date AND time are mentioned together
@@ -467,9 +506,10 @@ Output exactly "NO_EVENT" only if:
 Think step by step:
 1. Is there a time mentioned? (required)
 2. Is there a date mentioned? (required)
-3. Is there a location? (optional)
-4. What's the event about? (required for title)
-5. Are all required fields clear and specific?`;
+3. Is there an end time or duration? (optional)
+4. Is there a location? (optional)
+5. What's the event about? (required for title)
+6. Are all required fields clear and specific?`;
 
       const headers = {
         'Content-Type': 'application/json'

@@ -634,11 +634,56 @@ export function createTestNotification(mainWindow) {
     
     // Add event details for messages that contain both date and time
     if (eventDate && eventTime) {
+      // Calculate an end time 1 hour after the start time by default
+      const [hours, minutes] = eventTime.split(':');
+      const endDate = eventDate;
+      let endHours = parseInt(hours) + 1;
+      let endMinutes = minutes;
+      
+      // Handle hour rollover
+      if (endHours >= 24) {
+        endHours = endHours - 24;
+      }
+      
+      const endTime = `${endHours.toString().padStart(2, '0')}:${endMinutes}`;
+      
+      // Extract a reasonable title from the message text
+      // Take the first line or first 50 characters, but look for event keywords first
+      let title = '';
+      
+      // Check for common event keywords to extract a better title
+      const eventKeywords = [
+        'meeting', 'session', 'call', 'sync', 'standup', 'review', 'planning', 'workshop',
+        'presentation', 'training', 'conference', 'webinar', 'deadline', 'release'
+      ];
+      
+      // Try to find a more specific event title by looking for event keywords
+      for (const keyword of eventKeywords) {
+        const regex = new RegExp(`\\b${keyword}\\b[^.!?]*`, 'i');
+        const match = testMessage.text.match(regex);
+        if (match && match[0]) {
+          // Limit the length of the extracted title
+          title = match[0].trim().substring(0, 50);
+          if (title.length === 50) title += '...';
+          break;
+        }
+      }
+      
+      // If no keyword matched, use the first line or sentence
+      if (!title) {
+        const firstLine = testMessage.text.split('\n')[0];
+        title = firstLine.length > 50 ? 
+                firstLine.substring(0, 50) + '...' : 
+                firstLine;
+      }
+      
       testMessage.eventDetails = {
         hasEvent: true,
-        title: testMessage.text.split('\n')[0].substring(0, 50),
+        title: title,
         date: eventDate,
         time: eventTime,
+        endDate: endDate,
+        endTime: endTime,
         description: testMessage.text,
         location: testMessage.text.match(/\b(?:in|at|@)\s+(.*?(?:Room|Conference|Hall|Building|Virtual|Zoom|Teams|Meet|Office|Center).*?)(?=[,.!?]|$)/i)?.[1] || null
       };
