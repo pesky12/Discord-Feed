@@ -107,7 +107,9 @@ async function generateMessageSummary(message, context = {}) {
   if (!openAIService.isEnabled()) return null;
   
   try {
-    return await openAIService.summarizeMessage(message, context);
+    // Use the consolidated method which includes local preprocessing
+    const result = await openAIService.processMessage(message, context);
+    return result.needsSummary ? result.summary : null;
   } catch (error) {
     console.error('Failed to summarize message:', error);
     return null;
@@ -264,42 +266,12 @@ async function processNotification(data) {
   const isUnknown = typeof serverInfo === 'string'
   const isDM = !serverInfo || serverInfo === 'Unknown Server'
   
-  let summaryPending = false;
   let category = null;
   let importance = null;
   let eventDetails = null;
+  let summary = null;
+  let summaryPending = false;
   
-  // Add AI enrichment if enabled
-  const openAIService = getOpenAIService();
-  if (settings.enableSummarization && data.body && openAIService.isEnabled()) {
-    try {
-      // Extract event details for all messages
-      eventDetails = await openAIService.extractEventDetails(data.body);
-      if (eventDetails) {
-        category = 'EVENT';
-        importance = 'MEDIUM'; // Default importance for events
-      }
-      
-      // For non-DM messages, also check other categories if no event was found
-      if (!isDM && !eventDetails) {
-        const categorization = await openAIService.categorizeMessage(data.body, isDM);
-        if (categorization) {
-          category = categorization.category;
-          importance = categorization.importance;
-        }
-      }
-      
-      // Check if message needs summarization before setting the flag
-      const needsSummary = await openAIService.shouldSummarize(data.body);
-      if (needsSummary) {
-        console.log('Generating summary for message:', data.body);
-        summaryPending = true;
-      }
-    } catch (error) {
-      console.error('Error in AI processing:', error);
-    }
-  }
-
   // Build message context for AI processing
   const context = {
     isDM,
@@ -307,14 +279,42 @@ async function processNotification(data) {
     author: data.message.nick || 'Unknown User',
     recentMessages: []
   };
+
+  // Add AI enrichment if enabled
+  const openAIService = getOpenAIService();
+  if (settings.enableSummarization && data.body && openAIService.isEnabled()) {
+    try {
+      // First check for event details as they take precedence
+      eventDetails = await openAIService.extractEventDetails(data.body);
+      
+      if (!eventDetails) {
+        // Use consolidated message processing for non-event messages
+        const result = await openAIService.processMessage(data.body, context);
+        
+        category = result.category;
+        importance = result.importance;
+        
+        if (result.needsSummary) {
+          summary = result.summary;
+          summaryPending = !result.summary; // Only pending if we need but don't have summary
+        }
+      } else {
+        // If it's an event, set appropriate category and importance
+        category = 'EVENT';
+        importance = 'MEDIUM';
+      }
+    } catch (error) {
+      console.error('Error in AI processing:', error);
+    }
+  }
   
   // Construct the enriched notification object
   const notification = {
     id: data.message.id,
     title: data.title,
     body: data.body,
-    summary: null,
-    summaryPending: summaryPending,
+    summary,
+    summaryPending,
     category,
     importance,
     eventDetails,
@@ -332,47 +332,34 @@ async function processNotification(data) {
       avatar: data.icon_url
     }
   }
-  
-  // Generate summary asynchronously if needed
-  if (summaryPending) {
-    generateMessageSummary(data.body, context).then(summary => {
-      if (summary) {
-        // Update notification in memory
-        const index = notifications.findIndex(n => n.id === notification.id)
-        if (index !== -1) {
-          notifications[index].summary = summary
-          notifications[index].summaryPending = false
-        }
-        
-        // Notify renderer of summary update
-        if (mainWindowRef && !mainWindowRef.isDestroyed()) {
-          mainWindowRef.webContents.send('discord:summary-update', { 
-            id: notification.id, 
-            summary 
-          })
-        }
-      } else {
-        // Handle failed summarization
-        const index = notifications.findIndex(n => n.id === notification.id)
-        if (index !== -1) {
-          notifications[index].summaryPending = false
-        }
-        
-        if (mainWindowRef && !mainWindowRef.isDestroyed()) {
-          mainWindowRef.webContents.send('discord:summary-update', { 
-            id: notification.id, 
-            summary: null,
-            cancelled: true
-          })
-        }
-      }
-    }).catch(error => {
-      console.error('Error generating summary asynchronously:', error)
-      
-      // Handle errors gracefully
+
+  // If summary is already available, we don't need to do anything else
+  if (!summaryPending) {
+    return notification;
+  }
+
+  // If summary is pending, generate it asynchronously
+  generateMessageSummary(data.body, context).then(generatedSummary => {
+    if (generatedSummary) {
+      // Update notification in memory
       const index = notifications.findIndex(n => n.id === notification.id)
       if (index !== -1) {
-        notifications[index].summaryPending = false
+        notifications[index].summary = generatedSummary;
+        notifications[index].summaryPending = false;
+      }
+      
+      // Notify renderer of summary update
+      if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+        mainWindowRef.webContents.send('discord:summary-update', { 
+          id: notification.id, 
+          summary: generatedSummary 
+        });
+      }
+    } else {
+      // Handle failed summarization
+      const index = notifications.findIndex(n => n.id === notification.id)
+      if (index !== -1) {
+        notifications[index].summaryPending = false;
       }
       
       if (mainWindowRef && !mainWindowRef.isDestroyed()) {
@@ -380,12 +367,28 @@ async function processNotification(data) {
           id: notification.id, 
           summary: null,
           cancelled: true
-        })
+        });
       }
-    })
-  }
+    }
+  }).catch(error => {
+    console.error('Error generating summary asynchronously:', error);
+    
+    // Handle errors gracefully
+    const index = notifications.findIndex(n => n.id === notification.id);
+    if (index !== -1) {
+      notifications[index].summaryPending = false;
+    }
+    
+    if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+      mainWindowRef.webContents.send('discord:summary-update', { 
+        id: notification.id, 
+        summary: null,
+        cancelled: true
+      });
+    }
+  });
 
-  return notification
+  return notification;
 }
 
 /**

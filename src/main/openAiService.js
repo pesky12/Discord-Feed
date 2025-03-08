@@ -50,6 +50,12 @@ export class OpenAIService {
     this.detectionMode = settings.summaryDetectionMode || 'length'
     this.minLength = settings.minLengthForSummary || 100
     this.model = settings.model || DEFAULT_MODEL
+
+    // Request batching settings
+    this.batchDelay = 500; // ms to wait before processing batch
+    this.batchSize = 5; // max requests per batch
+    this.pendingRequests = [];
+    this.batchTimeout = null;
   }
 
   /**
@@ -79,23 +85,22 @@ export class OpenAIService {
    * @returns {Promise<boolean>} True if summarization is needed
    */
   async shouldSummarize(messageContent) {
-    if (!this.isEnabled() || !messageContent || messageContent.trim() === '') {
+    // Local heuristics before calling LLM
+    if (!this.isEnabled() || !messageContent) return false;
+    
+    // Simple length-based check
+    if (messageContent.length < 16) return false;
+    
+    // Local pattern matching for common cases
+    if (messageContent.match(/^(hi|hello|hey|thanks|ok|cool|nice|lol|haha).{0,10}$/i)) {
       return false;
     }
-
-    if (this.detectionMode === 'length') {
-      return messageContent.length >= this.minLength;
-    }
-
+    
+    // Only use LLM for complex decisions if in smart mode
     if (this.detectionMode === 'smart') {
-      try {
-        return await this.checkSummarizationNeed(messageContent);
-      } catch (error) {
-        console.error('Error checking if message needs summarization:', error);
-        return messageContent.length >= this.minLength;
-      }
+      return this.checkSummarizationNeed(messageContent);
     }
-
+    
     return messageContent.length >= this.minLength;
   }
 
@@ -169,6 +174,87 @@ Respond with ONLY "YES" or "NO" - should this message be summarized?`;
   }
 
   /**
+   * Adds a request to the batch queue
+   * @private
+   */
+  async addToBatch(request) {
+    return new Promise((resolve, reject) => {
+      this.pendingRequests.push({ ...request, resolve, reject });
+      
+      if (this.batchTimeout) {
+        clearTimeout(this.batchTimeout);
+      }
+      
+      this.batchTimeout = setTimeout(() => this.processBatch(), this.batchDelay);
+      
+      // Process immediately if batch is full
+      if (this.pendingRequests.length >= this.batchSize) {
+        clearTimeout(this.batchTimeout);
+        this.processBatch();
+      }
+    });
+  }
+
+  /**
+   * Processes a batch of requests
+   * @private
+   */
+  async processBatch() {
+    if (this.pendingRequests.length === 0) return;
+    
+    const batch = this.pendingRequests.splice(0, this.batchSize);
+    const endpoint = `${this.apiEndpoint.replace(/\/+$/, '')}/chat/completions`;
+    
+    try {
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (this.apiKey && this.apiKey.trim() !== '') {
+        headers['Authorization'] = `Bearer ${this.apiKey}`;
+      }
+
+      // Batch requests into a single API call
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: this.model,
+          messages: batch.map(req => ({
+            role: req.role || 'user',
+            content: req.content
+          })),
+          max_tokens: Math.max(...batch.map(req => req.maxTokens || 100)),
+          temperature: Math.min(...batch.map(req => req.temperature || 0.3))
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      batch.forEach((req, index) => {
+        if (data.choices[index]) {
+          req.resolve(data.choices[index].message.content);
+        } else {
+          req.reject(new Error('No response data available'));
+        }
+      });
+    } catch (error) {
+      batch.forEach(req => req.reject(error));
+    }
+  }
+
+  /**
+   * Makes an API request with batching support
+   * @private
+   */
+  async makeRequest(content, role = 'user', maxTokens = 100, temperature = 0.3) {
+    return this.addToBatch({ content, role, maxTokens, temperature });
+  }
+
+  /**
    * Generates a concise summary of a Discord message using AI
    * @param {string} messageContent - The message to summarize
    * @param {Object} context - Additional context about the message
@@ -207,43 +293,13 @@ Consider the following context when analyzing messages:`;
 
       const prompt = `Please provide a brief, concise summary (1-2 sentences) of the following Discord message${context.isDM ? ' from this DM conversation' : ''}: "${humanReadableMessage}"`;
 
-      const headers = {
-        'Content-Type': 'application/json'
-      };
+      // Use the new batching system
+      const summary = await this.makeRequest(prompt, 'user', 100, 0.3);
+      return summary.trim();
 
-      if (this.apiKey && this.apiKey.trim() !== '') {
-        headers['Authorization'] = `Bearer ${this.apiKey}`;
-      }
-
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: this.model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: prompt }
-          ],
-          max_tokens: 100,
-          temperature: 0.3
-        })
-      });
-
-      if (!response.ok) {
-        const error = await response.json()
-        console.error('LLM API error:', error)
-        return null
-      }
-
-      const data = await response.json()
-      if (data.choices && data.choices.length > 0 && data.choices[0].message) {
-        return data.choices[0].message.content.trim()
-      }
-
-      return null
     } catch (error) {
-      console.error('Failed to generate summary:', error)
-      return null
+      console.error('Failed to generate summary:', error);
+      return null;
     }
   }
 
@@ -531,7 +587,7 @@ Think step by step:
             },
             { role: 'user', content: prompt }
           ],
-          temperature: 0.3, // Increased from 0.1 to allow more flexibility
+          temperature: 0.3,
           max_tokens: 500 // Increased to ensure full response
         })
       });
@@ -571,6 +627,101 @@ Think step by step:
       console.error('Error in extractEventDetails:', error);
       return null;
     }
+  }
+
+  /**
+   * Processes a message with consolidated LLM requests for multiple analyses
+   * @param {string} messageContent - The message to analyze
+   * @param {Object} context - Additional context about the message
+   * @returns {Promise<Object>} Combined analysis results
+   */
+  async processMessage(messageContent, context = {}) {
+    if (!this.isEnabled() || !messageContent || messageContent.trim() === '') {
+      return {
+        needsSummary: false,
+        summary: null,
+        category: 'CASUAL',
+        importance: 'LOW'
+      };
+    }
+
+    // Apply local preprocessing first
+    if (messageContent.length < 16 || 
+        messageContent.match(/^(hi|hello|hey|thanks|ok|cool|nice|lol|haha).{0,10}$/i)) {
+      return {
+        needsSummary: false,
+        summary: null,
+        category: 'CASUAL',
+        importance: 'LOW'
+      };
+    }
+
+    try {
+      // Convert timestamps for better analysis
+      const humanReadableMessage = convertDiscordTimestampsToText(messageContent);
+
+      let contextStr = '';
+      if (context.channel) contextStr += `\nChannel: ${context.channel}`;
+      if (context.author) contextStr += `\nAuthor: ${context.author}`;
+      if (context.isDM) contextStr += `\nThis is a direct message conversation`;
+      if (context.recentMessages) {
+        contextStr += `\nRecent conversation:\n${context.recentMessages.map(m => `${m.author}: ${m.content}`).join('\n')}`;
+      }
+
+      const prompt = `Analyze this Discord message comprehensively:
+Message: "${humanReadableMessage}"
+${contextStr}
+
+Consider these aspects:
+1. Does this need summarization? (Check if it's long, complex, information-dense, or contains important info)
+2. What category best fits? (EVENT, QUESTION, ANNOUNCEMENT, or CASUAL)
+3. How important is it? (HIGH for critical/urgent, MEDIUM for regular updates, LOW for casual chat)
+4. If summarization needed, provide a 1-2 sentence summary
+
+Return a JSON object with these fields:
+{
+  "needsSummary": boolean,
+  "summary": "brief summary if needed, null if not",
+  "category": "EVENT/QUESTION/ANNOUNCEMENT/CASUAL",
+  "importance": "HIGH/MEDIUM/LOW"
+}`;
+
+      const response = await this.makeRequest(prompt, 'user', 300, 0.3);
+      const result = JSON.parse(response.trim());
+
+      // Validate and clean up the response
+      return {
+        needsSummary: Boolean(result.needsSummary),
+        summary: result.needsSummary ? result.summary?.trim() || null : null,
+        category: ['EVENT', 'QUESTION', 'ANNOUNCEMENT', 'CASUAL'].includes(result.category) 
+          ? result.category 
+          : 'CASUAL',
+        importance: ['HIGH', 'MEDIUM', 'LOW'].includes(result.importance) 
+          ? result.importance 
+          : 'LOW'
+      };
+
+    } catch (error) {
+      console.error('Error in processMessage:', error);
+      return {
+        needsSummary: messageContent.length >= this.minLength,
+        summary: null,
+        category: 'CASUAL',
+        importance: 'LOW'
+      };
+    }
+  }
+
+  // Optional helper method to maintain backwards compatibility
+  async categorizeAndSummarize(messageContent, context = {}) {
+    const result = await this.processMessage(messageContent, context);
+    return {
+      summary: result.summary,
+      categorization: {
+        category: result.category,
+        importance: result.importance
+      }
+    };
   }
 }
 
