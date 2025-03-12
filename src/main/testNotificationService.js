@@ -14,6 +14,11 @@ export function createTestNotification(mainWindow, processNotification, notifica
   console.log('Creating test notification')
   if (!mainWindow) return;
 
+  // Generate test IDs at the top before creating test messages
+  const messageId = `test-message-${Date.now()}`;
+  const channelId = `test-channel-${Date.now()}`;
+  const serverId = `test-server-${Date.now()}`;
+
   // Generate a tomorrow's date for testing
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -293,10 +298,7 @@ We're excited to introduce our newest department <@&community-relations> who wil
   };
   
   // Use this message for the test notification
-  let messageId = `test-message-${Date.now()}`;
-  let channelId = `test-channel-${Date.now()}`;
-  let serverId = `test-server-${Date.now()}`;
-  const channelName = selectedTest.channel;
+  let channelName = selectedTest.channel;
 
   // Create the mock notification
   const mockNotification = {

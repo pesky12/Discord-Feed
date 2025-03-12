@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import PropTypes from 'prop-types'
 import CalendarEventButton from './CalendarEventButton'
-import { formatTimestamp, formatMessageWithTimestamps } from '../utils/timeFormatters'
+import { formatTimestamp } from '../utils/timeFormatters'
+import { parseDiscordMarkdown } from '../utils/markdownFormatter'
 import TextStreamer from './TextStreamer'
 
 // AI Star icon for processing indicator
@@ -30,8 +31,21 @@ const NotificationItem = ({ notification }) => {
   });
   
   const [eventDetails, setEventDetails] = useState(notification.eventDetails)
+  
+  // Add this immediate log to see notification body content
+  console.log('%c NOTIFICATION BODY CONTENT ', 'background: #ff5722; color: white; font-size: 14px', 
+    notification.body);
 
   useEffect(() => {
+    // Check for markdown syntax in notification body
+    if (notification.body) {
+      const hasMarkdown = /(\*\*|\*|__|_|~~|`|\[|\n>)/.test(notification.body);
+      console.log('%c MARKDOWN DETECTION ', 'background: #4caf50; color: white; font-size: 14px', {
+        hasMarkdownSyntax: hasMarkdown,
+        body: notification.body.substring(0, 100) + (notification.body.length > 100 ? '...' : '')
+      });
+    }
+
     if (notification?.icon && notification.icon.startsWith('https://cdn.discordapp.com')) {
       window.api.fetchDiscordImage?.(notification.icon).then((localUrl) => {
         if (localUrl) setAvatarSrc(localUrl)
@@ -170,6 +184,27 @@ const NotificationItem = ({ notification }) => {
     shouldShowLoading: summaryState === 'loading',
     shouldShowComplete: summaryState === 'complete' && summary
   });
+  
+  // Add debug log specifically for the markdown parsing
+  const renderNotificationBody = () => {
+    console.log('%c RENDERING MARKDOWN BODY ', 'background: #2196f3; color: white; font-size: 14px', 
+      { body: notification.body });
+    
+    if (typeof notification.body !== 'string') {
+      console.log('Body is not a string:', typeof notification.body);
+      return notification.body;
+    }
+    
+    try {
+      const parsedResult = parseDiscordMarkdown(notification.body);
+      console.log('%c MARKDOWN RESULT ', 'background: #9c27b0; color: white; font-size: 14px', 
+        { result: parsedResult });
+      return parsedResult;
+    } catch (error) {
+      console.error('Error parsing markdown:', error);
+      return notification.body;
+    }
+  };
 
   return (
     <div className={`notification-item ${getImportanceClass()}`}>
@@ -193,9 +228,9 @@ const NotificationItem = ({ notification }) => {
 
       <div className="notification-content">
         <div className="notification-title">{notification.title}</div>
-        <p className="notification-body">
-          {typeof notification.body === 'string' && notification.body.match(/<t:\d+:[tTdDfFR]>/g) ? formatMessageWithTimestamps(notification.body) : notification.body}
-        </p>
+        <div className="notification-body">
+          {renderNotificationBody()}
+        </div>
 
         {/* Extra condition to ensure we only show when truly loading */}
         {summaryState === 'loading' && summaryState !== 'none' && summaryState !== 'complete' && (
