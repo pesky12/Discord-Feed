@@ -3,43 +3,52 @@ import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
 const api = {
-  // Discord-related methods
+  // Discord connection management
   discord: {
     connect: () => ipcRenderer.invoke('discord:connect'),
     disconnect: () => ipcRenderer.invoke('discord:disconnect'),
-    getNotifications: () => ipcRenderer.invoke('discord:get-notifications'),
-    getNotificationsPage: (params) => ipcRenderer.invoke('discord:get-notifications-page', params),
     isConnected: () => ipcRenderer.invoke('discord:is-connected'),
-    updateSettings: (settings) => ipcRenderer.invoke('discord:update-settings', settings),
     getSettings: () => ipcRenderer.invoke('discord:get-settings'),
+    updateSettings: (settings) => ipcRenderer.invoke('discord:update-settings', settings),
+    getNotifications: () => ipcRenderer.invoke('discord:get-notifications'),
+    getNotificationsPage: (options) => ipcRenderer.invoke('discord:get-notifications-page', options),
+    createTestNotification: (options) => ipcRenderer.invoke('discord:create-test-notification', options),
+    testLlmConnection: (settings) => ipcRenderer.invoke('discord:test-llm-connection', settings),
     onNotification: (callback) => {
-      const listener = (_, notification) => callback(notification)
-      ipcRenderer.on('discord:notification', listener)
-      return () => ipcRenderer.removeListener('discord:notification', listener)
-    },
-    onConnectionChange: (callback) => {
-      const listener = (_, isConnected) => callback(isConnected)
-      ipcRenderer.on('discord:connection-change', listener)
-      return () => ipcRenderer.removeListener('discord:connection-change', listener)
+      const handler = (_, data) => callback(data)
+      ipcRenderer.on('discord:notification', handler)
+      return () => ipcRenderer.removeListener('discord:notification', handler)
     },
     onNotificationUpdate: (callback) => {
-      const listener = (_, update) => callback(update)
-      ipcRenderer.on('discord:notification-update', listener)
-      return () => ipcRenderer.removeListener('discord:notification-update', listener)
+      const handler = (_, data) => callback(data)
+      ipcRenderer.on('discord:notification-update', handler)
+      return () => ipcRenderer.removeListener('discord:notification-update', handler)
     },
-    // Method for manual summarization of message content
-    summarizeMessage: (content) => ipcRenderer.invoke('summarize-message', content),
-    // Method to generate test notifications
-    createTestNotification: () => ipcRenderer.invoke('discord:create-test-notification'),
-    // Method to test LLM connection before saving settings
-    testLlmConnection: (settings) => ipcRenderer.invoke('discord:test-llm-connection', settings)
+    onSummaryUpdate: (callback) => {
+      const handler = (_, data) => callback(data)
+      ipcRenderer.on('discord:summary-update', handler)
+      return () => ipcRenderer.removeListener('discord:summary-update', handler)
+    },
+    onSummaryStreamChunk: (callback) => {
+      const handler = (_, data) => callback(data)
+      ipcRenderer.on('discord:summary-stream-chunk', handler)
+      return () => ipcRenderer.removeListener('discord:summary-stream-chunk', handler)
+    },
+    onConnectionChange: (callback) => {
+      const handler = (_, data) => callback(data)
+      ipcRenderer.on('discord:connection-change', handler)
+      return () => ipcRenderer.removeListener('discord:connection-change', handler)
+    }
   },
-  // App-related methods
-  app: {
-    // Methods for auto-launch feature
-    getAutoLaunchEnabled: () => ipcRenderer.invoke('app:get-auto-launch'),
-    setAutoLaunchEnabled: (enable) => ipcRenderer.invoke('app:set-auto-launch', enable)
-  }
+  // Testing and development APIs
+  getMessageCategories: () => ipcRenderer.invoke('test:get-message-categories'),
+  
+  // App management
+  getAutoLaunch: () => ipcRenderer.invoke('app:get-auto-launch'),
+  setAutoLaunch: (enable) => ipcRenderer.invoke('app:set-auto-launch', enable),
+  openExternal: (url) => ipcRenderer.send('open-external', url),
+  minimizeToTray: () => ipcRenderer.send('minimize-to-tray'),
+  closeWindow: () => ipcRenderer.send('close-window')
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

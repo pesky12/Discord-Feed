@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import PropTypes from 'prop-types'
 import CalendarEventButton from './CalendarEventButton'
 import { formatTimestamp, formatMessageWithTimestamps } from '../utils/timeFormatters'
+import TextStreamer from './TextStreamer'
 
 // AI Star icon for processing indicator
 const AiStarIcon = () => (
@@ -13,10 +14,22 @@ const AiStarIcon = () => (
 const NotificationItem = ({ notification }) => {
   const [avatarSrc, setAvatarSrc] = useState('https://cdn.discordapp.com/embed/avatars/0.png')
   const [summary, setSummary] = useState(notification.summary)
-  const [summaryState, setSummaryState] = useState(
-    notification.summary ? 'complete' : 
-    notification.summaryPending ? 'loading' : 'none'
-  )
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streaming, setStreaming] = useState(false);
+  
+  // Be extra cautious about the initial state - only set to loading if explicitly true
+  const [summaryState, setSummaryState] = useState(() => {
+    console.log('Initial summaryState calculation:', {
+      summary: !!notification.summary,
+      summaryPending: notification.summaryPending,
+      result: notification.summary ? 'complete' : 
+              notification.summaryPending === true ? 'loading' : 'none'
+    });
+    return notification.summary ? 'complete' : 
+           notification.summaryPending === true ? 'loading' : 'none';
+  });
+  
+  const [eventDetails, setEventDetails] = useState(notification.eventDetails)
 
   useEffect(() => {
     if (notification?.icon && notification.icon.startsWith('https://cdn.discordapp.com')) {
@@ -25,33 +38,112 @@ const NotificationItem = ({ notification }) => {
       })
     }
 
-    // Initialize summary state based on notification
+    // Extra defensive check when setting initial state
     const initialSummaryState = notification.summary ? 'complete' : 
-                               notification.summaryPending ? 'loading' : 'none'
-    setSummaryState(initialSummaryState)
-    setSummary(notification.summary)
+                               notification.summaryPending === true ? 'loading' : 'none';
+    console.log('Setting initial summaryState:', {
+      id: notification.id,
+      summary: !!notification.summary, 
+      summaryPending: notification.summaryPending,
+      state: initialSummaryState
+    });
+    setSummaryState(initialSummaryState);
+    setSummary(notification.summary);
+    
+    // Ensure eventDetails is set from notification
+    if (notification.eventDetails) {
+      console.log('NotificationItem - setting eventDetails:', notification.eventDetails)
+      console.log('NotificationItem - eventDetails data check:', {
+        title: notification.eventDetails.title || 'MISSING',
+        date: notification.eventDetails.date || 'MISSING', 
+        time: notification.eventDetails.time || 'MISSING'
+      })
+      setEventDetails(notification.eventDetails)
+    } else {
+      console.log('NotificationItem - notification has no eventDetails')
+    }
+    
+    // Debug log for eventDetails
+    console.log('NotificationItem - eventDetails from notification:', notification.eventDetails)
 
-    // Check if we need to listen for summary updates
-    if (notification.summaryPending && notification.body) {
-      // Listen for summary updates for this specific notification
-      const handleSummaryUpdate = (_, { id, summary, cancelled }) => {
-        if (id === notification.id) {
-          if (summary) {
-            setSummary(summary)
-            setSummaryState('complete')
-          } else if (cancelled) {
-            setSummaryState('none')
-          }
+    // Listen for summary updates
+    const handleSummaryUpdate = (_, { id, summary, cancelled, noSummaryNeeded }) => {
+      if (id === notification.id) {
+        if (summary) {
+          setSummary(summary)
+          setSummaryState('complete')
+          // We don't set isStreaming here anymore since we'll handle real streaming
+        } else if (cancelled || noSummaryNeeded) {
+          setSummaryState('none')
         }
       }
+    }
 
-      // Register event listener
-      window.electron.ipcRenderer.on('discord:summary-update', handleSummaryUpdate)
-
-      // Cleanup event listener when component unmounts
-      return () => {
-        window.electron.ipcRenderer.removeListener('discord:summary-update', handleSummaryUpdate)
+    // New handler for streaming summary chunks
+    const handleSummaryStreamUpdate = (_, { id, chunk, fullText }) => {
+      if (id === notification.id) {
+        setStreaming(true);
+        setSummary(fullText);
+        setSummaryState('complete');
       }
+    }
+
+    // Listen for notification updates with improved debugging
+    const handleNotificationUpdate = (_, update) => {
+      console.log('NotificationItem - received update:', {
+        matchesId: update.id === notification.id,
+        updateId: update.id,
+        notificationId: notification.id,
+        summaryPending: update.summaryPending,
+        debug: update.debug || 'No debug info'
+      });
+      
+      if (update.id === notification.id) {
+        if (update.eventDetails) {
+          console.log('NotificationItem - received eventDetails update:', update.eventDetails)
+          console.log('NotificationItem - eventDetails update check:', {
+            hasRequiredFields: !!(
+              update.eventDetails?.title && 
+              update.eventDetails?.date && 
+              update.eventDetails?.time
+            ),
+            title: update.eventDetails.title || 'MISSING',
+            date: update.eventDetails.date || 'MISSING', 
+            time: update.eventDetails.time || 'MISSING'
+          })
+          setEventDetails(update.eventDetails)
+        }
+        
+        // Extra defensive check for summaryPending updates
+        if (update.summaryPending !== undefined) {
+          const newState = update.summaryPending === true ? 'loading' : 'none';
+          console.log('Updating summaryState from update:', {
+            id: update.id,
+            oldState: summaryState,
+            newState,
+            summaryPending: update.summaryPending
+          });
+          setSummaryState(newState);
+        }
+        
+        // If update includes summary, always move to complete state
+        if (update.summary) {
+          setSummary(update.summary);
+          setSummaryState('complete');
+        }
+      }
+    }
+
+    // Register event listeners
+    window.electron.ipcRenderer.on('discord:summary-update', handleSummaryUpdate)
+    window.electron.ipcRenderer.on('discord:summary-stream-chunk', handleSummaryStreamUpdate);
+    window.electron.ipcRenderer.on('discord:notification-update', handleNotificationUpdate)
+
+    // Cleanup event listeners when component unmounts
+    return () => {
+      window.electron.ipcRenderer.removeListener('discord:summary-update', handleSummaryUpdate)
+      window.electron.ipcRenderer.removeListener('discord:summary-stream-chunk', handleSummaryStreamUpdate);
+      window.electron.ipcRenderer.removeListener('discord:notification-update', handleNotificationUpdate)
     }
   }, [notification])
 
@@ -67,6 +159,17 @@ const NotificationItem = ({ notification }) => {
         return ''
     }
   }
+
+  // Add this debug log outside of useEffect to track current state
+  console.log('NotificationItem render - current eventDetails:', eventDetails)
+
+  // Add debug output to understand rendering decisions
+  console.log('NotificationItem render state:', {
+    id: notification.id,
+    summaryState,
+    shouldShowLoading: summaryState === 'loading',
+    shouldShowComplete: summaryState === 'complete' && summary
+  });
 
   return (
     <div className={`notification-item ${getImportanceClass()}`}>
@@ -94,7 +197,8 @@ const NotificationItem = ({ notification }) => {
           {typeof notification.body === 'string' && notification.body.match(/<t:\d+:[tTdDfFR]>/g) ? formatMessageWithTimestamps(notification.body) : notification.body}
         </p>
 
-        {summaryState === 'loading' && (
+        {/* Extra condition to ensure we only show when truly loading */}
+        {summaryState === 'loading' && summaryState !== 'none' && summaryState !== 'complete' && (
           <div className="notification-summary loading">
             <div className="summary-title">
               <AiStarIcon /> Analyzing message...
@@ -109,15 +213,28 @@ const NotificationItem = ({ notification }) => {
           </div>
         )}
 
+        {/* Use TextStreamer for the summary text */}
         {summaryState === 'complete' && summary && (
           <div className="notification-summary">
             <div className="summary-title">AI Summary</div>
-            <p className="summary-text">{summary}</p>
+            <p className="summary-text">
+              {isStreaming || streaming ? (
+                <TextStreamer 
+                  text={summary} 
+                  speed={2}  // Faster speed (lower number = faster intervals)
+                  onComplete={() => {
+                    setIsStreaming(false);
+                    setStreaming(false);
+                  }} 
+                />
+              ) : summary}
+            </p>
           </div>
         )}
       </div>
 
-      {summaryState === 'loading' && (
+      {/* Extra check for processing indicator */}
+      {summaryState === 'loading' && summaryState !== 'none' && summaryState !== 'complete' && (
         <div className="processing-indicator">
           <AiStarIcon />
           <span>Processing with AI</span>
@@ -126,11 +243,29 @@ const NotificationItem = ({ notification }) => {
 
       <div className="notification-meta">
         <div className="notification-actions">
-          {(notification.category === 'EVENT' || 
-            notification.eventStart || 
-            notification.eventName) && (
-            <CalendarEventButton eventData={notification} notificationId={notification.id} />
+          {eventDetails && (
+            <>
+              <CalendarEventButton 
+                eventData={{
+                  eventDetails: eventDetails
+                }}
+              />
+              {/* Debug display for fields required for calendar button */}
+              {/* <div style={{fontSize: '10px', color: '#666', margin: '5px 0', display: 'block'}}>
+                Event found: {eventDetails.title} on {eventDetails.date} at {eventDetails.time}
+              </div> */}
+            </>
           )}
+          {/* {!eventDetails && notification.eventPending && (
+            <div style={{fontSize: '10px', color: '#666', margin: '5px 0'}}>
+              Checking for event details...
+            </div>
+          )}
+          {!eventDetails && !notification.eventPending && (
+            <div style={{fontSize: '10px', color: '#666', margin: '5px 0'}}>
+              No event details found
+            </div>
+          )} */}
         </div>
         <span className="server-info">
           {notification.serverName} • #{notification.channelName}
@@ -180,7 +315,16 @@ NotificationItem.propTypes = {
     eventDescription: PropTypes.string,
     eventStart: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
     eventEnd: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-    eventLocation: PropTypes.string
+    eventLocation: PropTypes.string,
+    eventDetails: PropTypes.shape({
+      title: PropTypes.string,
+      date: PropTypes.string,
+      time: PropTypes.string,
+      endDate: PropTypes.string,
+      endTime: PropTypes.string,
+      description: PropTypes.string,
+      location: PropTypes.string
+    })
   }).isRequired
 }
 

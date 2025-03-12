@@ -1,0 +1,33 @@
+/* ...existing styles... */
+
+/* Text streaming animation */
+.streamed-text {
+  display: inline-block;
+  line-height: 1.4;
+}
+
+.streamed-text.streaming {
+  color: var(--text-highlight);
+}
+
+.text-cursor {
+  display: inline-block;
+  width: 3px;
+  height: 1.2em;
+  background-color: var(--accent-color);
+  margin-left: 2px;
+  vertical-align: bottom;
+  animation: blink 0.8s infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Applied to the summary text */
+.notification-summary .summary-text {
+  transition: opacity 0.3s ease-in-out;
+}
+
+/* ...existing styles... */

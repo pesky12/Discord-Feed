@@ -1,10 +1,15 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import PropTypes from 'prop-types'
 import { Menu, Button, Dropdown } from 'antd'
 import { CalendarOutlined, LoadingOutlined } from '@ant-design/icons'
 
 const CalendarEventButton = ({ eventData }) => {
   const [loading, setLoading] = useState(false)
+  
+  // Debug log to see the eventData being received
+  useEffect(() => {
+    console.log('CalendarEventButton - received eventData:', eventData)
+  }, [eventData])
 
   const handleCalendarAction = async (type) => {
     setLoading(true)
@@ -22,6 +27,9 @@ const CalendarEventButton = ({ eventData }) => {
         description: eventData.eventDetails.description,
         location: eventData.eventDetails.location || ''
       }
+
+      // Log the processed details
+      console.log('CalendarEventButton - processing details:', details)
 
       let url
       switch (type) {
@@ -47,26 +55,52 @@ const CalendarEventButton = ({ eventData }) => {
   }
 
   const generateGoogleCalendarUrl = (details) => {
+    if (!details.date || !details.time) {
+      throw new Error('Missing required date/time information')
+    }
+
+    // Base URL for Google Calendar event creation
     const baseUrl = 'https://calendar.google.com/calendar/render'
-    const params = new URLSearchParams({
-      action: 'TEMPLATE',
-      text: details.title || 'Event', // Use a default title if none is provided
-      details: details.description || '', // Make sure description doesn't overflow into title
-      location: details.location || '',
-      dates: formatDatesForGoogle(details.date, details.time, details.endDate, details.endTime)
-    })
-    return `${baseUrl}?${params.toString()}`
+    const action = 'action=TEMPLATE'
+    
+    // Create properly formatted start and end dates in UTC
+    const startDate = createDateObject(details.date, details.time)
+    const endDate = details.endTime 
+      ? createDateObject(details.endDate || details.date, details.endTime)
+      : new Date(startDate.getTime() + 60 * 60 * 1000) // Default: +1 hour
+    
+    // Format dates for Google Calendar (YYYYMMDDTHHmmssZ)
+    const formatDate = (date) => {
+      return date.toISOString().replace(/-|:|\.\d+/g, '')
+    }
+    
+    const dates = `dates=${formatDate(startDate)}/${formatDate(endDate)}`
+    const text = `text=${encodeURIComponent(details.title || 'Event')}`
+    const location = details.location ? `&location=${encodeURIComponent(details.location)}` : ''
+    const description = details.description ? `&details=${encodeURIComponent(details.description)}` : ''
+    
+    return `${baseUrl}?${action}&${text}&${dates}${location}${description}`
   }
 
   const generateOutlookCalendarUrl = (details) => {
-    const baseUrl = 'https://outlook.live.com/calendar/0/deeplink/compose'
-    const params = new URLSearchParams({
-      subject: details.title || 'Event',
-      body: details.description || '',
-      location: details.location || '',
-      startdt: formatDatesForOutlook(details.date, details.time),
-      enddt: formatEndDateForOutlook(details.date, details.time, details.endDate, details.endTime)
-    })
+    // Base URL for Outlook Calendar event creation
+    const baseUrl = 'https://outlook.office.com/calendar/0/deeplink/compose'
+    
+    // Create properly formatted start and end dates
+    const startDate = createDateObject(details.date, details.time)
+    const endDate = details.endTime 
+      ? createDateObject(details.endDate || details.date, details.endTime)
+      : new Date(startDate.getTime() + 60 * 60 * 1000) // Default: +1 hour
+      
+    // Format dates for Outlook (ISO format)
+    const params = new URLSearchParams()
+    params.append('subject', details.title || 'Event')
+    params.append('body', details.description || '')
+    params.append('location', details.location || '')
+    params.append('startdt', startDate.toISOString())
+    params.append('enddt', endDate.toISOString())
+    params.append('path', '/calendar/action/compose')
+    
     return `${baseUrl}?${params.toString()}`
   }
 
@@ -76,83 +110,49 @@ const CalendarEventButton = ({ eventData }) => {
     return URL.createObjectURL(blob)
   }
 
-  const formatDatesForGoogle = (date, time, endDate, endTime) => {
-    // Parse the standardized date from LLM (YYYY-MM-DD format)
-    const [year, month, day] = date.split('-')
-    const start = new Date(year, month - 1, day)
+  const createDateObject = (dateStr, timeStr) => {
+    // Parse date components (YYYY-MM-DD)
+    const [year, month, day] = dateStr.split('-').map(Number)
     
-    // Parse the standardized time (HH:MM format)
-    const [hours, minutes] = time.split(':')
-    start.setHours(parseInt(hours), parseInt(minutes))
+    // Parse time components (HH:MM)
+    const [hours, minutes] = timeStr.split(':').map(Number)
     
-    // Parse end date and time or default to 1 hour after start
-    let end;
-    if (endDate && endTime) {
-      const [endYear, endMonth, endDay] = endDate.split('-')
-      end = new Date(endYear, endMonth - 1, endDay)
-      const [endHours, endMinutes] = endTime.split(':')
-      end.setHours(parseInt(endHours), parseInt(endMinutes))
-    } else {
-      end = new Date(start.getTime() + 60 * 60 * 1000) // Default: 1 hour later
-    }
+    // Create JavaScript Date object (in local timezone)
+    const date = new Date(year, month - 1, day, hours, minutes)
     
-    return `${start.toISOString().replace(/[-:]/g, '')}/${end.toISOString().replace(/[-:]/g, '')}`
-  }
-
-  const formatDatesForOutlook = (date, time) => {
-    const [year, month, day] = date.split('-')
-    const startDate = new Date(year, month - 1, day)
-    const [hours, minutes] = time.split(':')
-    startDate.setHours(parseInt(hours), parseInt(minutes))
-    return startDate.toISOString()
-  }
-
-  const formatEndDateForOutlook = (date, time, endDate, endTime) => {
-    if (endDate && endTime) {
-      const [endYear, endMonth, endDay] = endDate.split('-')
-      const end = new Date(endYear, endMonth - 1, endDay)
-      const [endHours, endMinutes] = endTime.split(':')
-      end.setHours(parseInt(endHours), parseInt(endMinutes))
-      return end.toISOString()
-    } else {
-      // Default: 1 hour after start
-      const [year, month, day] = date.split('-')
-      const end = new Date(year, month - 1, day)
-      const [hours, minutes] = time.split(':')
-      end.setHours(parseInt(hours), parseInt(minutes))
-      end.setTime(end.getTime() + 60 * 60 * 1000) 
-      return end.toISOString()
-    }
+    return date
   }
 
   const generateICSContent = (details) => {
-    const [year, month, day] = details.date.split('-')
-    const [hours, minutes] = details.time.split(':')
-    const start = new Date(year, month - 1, day)
-    start.setHours(parseInt(hours), parseInt(minutes))
+    // Create start and end date objects
+    const startDate = createDateObject(details.date, details.time)
+    const endDate = details.endTime 
+      ? createDateObject(details.endDate || details.date, details.endTime)
+      : new Date(startDate.getTime() + 60 * 60 * 1000) // Default: +1 hour
     
-    // Parse end date and time or default to 1 hour after start
-    let end;
-    if (details.endDate && details.endTime) {
-      const [endYear, endMonth, endDay] = details.endDate.split('-')
-      end = new Date(endYear, endMonth - 1, endDay)
-      const [endHours, endMinutes] = details.endTime.split(':')
-      end.setHours(parseInt(endHours), parseInt(endMinutes))
-    } else {
-      end = new Date(start.getTime() + 60 * 60 * 1000) // Default: 1 hour later
+    // Format dates for iCalendar (YYYYMMDDTHHmmssZ)
+    const formatDate = (date) => {
+      return date.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')
     }
-
-    const location = details.location ? `\nLOCATION:${details.location}` : ''
-    const title = details.title || 'Event' // Default title if none provided
-    const description = details.description || '' // Ensure description doesn't overflow
     
+    // Ensure valid inputs for calendar event
+    const title = details.title ? details.title.replace(/\n/g, '\\n') : 'Event'
+    const description = details.description ? details.description.replace(/\n/g, '\\n') : ''
+    const location = details.location ? details.location.replace(/\n/g, '\\n') : ''
+    
+    // Generate the ICS content
     return `BEGIN:VCALENDAR
 VERSION:2.0
+PRODID:-//Discord-Feed//Calendar Event//EN
+CALSCALE:GREGORIAN
 BEGIN:VEVENT
-DTSTART:${start.toISOString().replace(/[-:]/g, '')}
-DTEND:${end.toISOString().replace(/[-:]/g, '')}
-SUMMARY:${title}${location}
+UID:${Date.now()}-${Math.floor(Math.random() * 100000)}@discord-feed
+DTSTAMP:${formatDate(new Date())}
+DTSTART:${formatDate(startDate)}
+DTEND:${formatDate(endDate)}
+SUMMARY:${title}
 DESCRIPTION:${description}
+LOCATION:${location}
 END:VEVENT
 END:VCALENDAR`
   }
@@ -171,9 +171,32 @@ END:VCALENDAR`
     </Menu>
   )
 
+  // Debug output of the condition check
+  const hasRequiredFields = !!(
+    eventData?.eventDetails?.title && 
+    eventData?.eventDetails?.date && 
+    eventData?.eventDetails?.time
+  )
+  
+  console.log('CalendarEventButton - component render check:', { 
+    hasRequiredFields, 
+    title: eventData?.eventDetails?.title,
+    date: eventData?.eventDetails?.date,
+    time: eventData?.eventDetails?.time,
+    eventDataExists: !!eventData,
+    eventDetailsExists: !!eventData?.eventDetails
+  })
+
   // Only show the button if we have the required event details
-  if (!eventData?.eventDetails?.title || !eventData?.eventDetails?.date || !eventData?.eventDetails?.time) {
-    return null
+  if (!hasRequiredFields) {
+    return (
+      <div style={{display: 'none'}}>
+        Missing fields for calendar: 
+        Title: {eventData?.eventDetails?.title ? 'YES' : 'NO'}, 
+        Date: {eventData?.eventDetails?.date ? 'YES' : 'NO'}, 
+        Time: {eventData?.eventDetails?.time ? 'YES' : 'NO'}
+      </div>
+    )
   }
 
   return (

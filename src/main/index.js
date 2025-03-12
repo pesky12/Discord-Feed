@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, globalShortcut, Tray, Menu } from '
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/Icon.png?asset'
-import { initDiscordRpc, createTestNotification } from './discordRpcService'
+import { initDiscordRpc, createTestNotification, processNotificationFunction } from './discordRpcService'
 import { getOpenAIService } from './openAiService'
 import path from 'path'
 import fs from 'fs'
@@ -124,7 +124,12 @@ app.whenReady().then(() => {
   // Register global shortcut for test notifications (Ctrl/Cmd+Shift+T)
   globalShortcut.register('CommandOrControl+Shift+T', () => {
     console.log('Test notification triggered via keyboard shortcut')
-    createTestNotification(mainWindow)
+    try {
+      // Create test notification with empty options to avoid accessing channelId before initialization
+      createTestNotification(mainWindow, processNotificationFunction, [], {});
+    } catch (err) {
+      console.error('Error creating test notification:', err);
+    }
   })
 
   // Handle macOS app activation
@@ -201,11 +206,8 @@ ipcMain.handle('summarize-message', async (_, content) => {
   }
 })
 
-// Handle test notification requests
-ipcMain.handle('discord:create-test-notification', () => {
-  createTestNotification(mainWindow)
-  return { success: true }
-})
+// Note: The 'discord:create-test-notification' handler has been removed from here
+// as it's already defined in discordRpcService.js
 
 // Handle auto-launch settings
 ipcMain.handle('app:get-auto-launch', () => {

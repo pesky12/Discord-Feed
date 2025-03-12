@@ -112,6 +112,7 @@ function App() {
 
   // Load notifications with pagination
   const loadNotifications = async (currentPage = 1, append = false) => {
+    console.log('Loading notifications for page:', currentPage);
     try {
       setIsLoadingMore(true)
       const result = await window.api.discord.getNotificationsPage({
@@ -132,6 +133,7 @@ function App() {
       console.error('Failed to load notifications:', err)
       setIsLoadingMore(false)
     }
+    console.log('Finished loading notifications');
   }
 
   // Handle loading more notifications
@@ -209,6 +211,7 @@ function App() {
   }
 
   useEffect(() => {
+    console.log('useEffect triggered for initial connection check');
     // Check initial connection status
     window.api.discord.isConnected().then((connected) => {
       setIsConnected(connected)
@@ -294,6 +297,7 @@ function App() {
 
   // Try to reconnect with exponential backoff
   const attemptReconnect = async () => {
+    console.log('Attempting to reconnect');
     if (isConnecting || isConnected || reconnectAttempts >= maxReconnectAttempts) return
 
     setIsConnecting(true)
@@ -326,10 +330,12 @@ function App() {
         localStorage.removeItem('autoReconnect')
       }
     }
+    console.log('Reconnect attempt finished');
   }
 
   // Handle disconnect with cleanup for auto-reconnect
   const handleDisconnect = async () => {
+    console.log('Disconnecting from Discord');
     try {
       await window.api.discord.disconnect()
       // Clear auto reconnect flag when manually disconnecting
@@ -344,6 +350,7 @@ function App() {
     } catch (err) {
       console.error('Error disconnecting from Discord', err)
     }
+    console.log('Disconnected from Discord');
   }
 
   // Add auto-reconnect effect
@@ -425,6 +432,7 @@ function App() {
 
   // Update the view type when notifications change
   useEffect(() => {
+    console.log('useEffect triggered for notification updates');
     // Check if all current notifications are DMs
     const allDMs = displayedNotifications.every(n => n.serverName === 'Direct Message');
     setIsDMView(allDMs);
